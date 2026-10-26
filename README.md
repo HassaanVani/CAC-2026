@@ -1,108 +1,120 @@
 # Common
 
-**A little help listening. A little space to reply.**
+**Every conversation, a little closer.**
 
-Common is a student-built web app for Deaf, hard-of-hearing, and hearing people. It combines English live captions, typed and spoken replies, observable voice cues, and introductory camera-assisted ASL handshape practice. Built for the 2026 Congressional App Challenge, with no accounts, backend, or paid API keys.
+A student-built communication app for Deaf, hard-of-hearing, and hearing people: live English captions, typed/spoken replies, observable sound cues, and a shared ASL fingerspelling studio. React, TypeScript, Vite, MediaPipe, and browser speech APIs. No account, backend, or paid API key.
 
-## Run locally
+## Run
 
-Use Node.js **22.12+** (also tested on Node 25.6) and desktop Chrome.
+Use Node **22.12+** and desktop Chrome. `.nvmrc` selects Node 22.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite, normally **http://127.0.0.1:5173/**. Camera and microphone access require localhost or HTTPS. Opening `index.html` directly from disk does not work.
+Open Vite's printed localhost URL. Camera/microphone access needs localhost or HTTPS; opening the HTML file directly does not work.
 
 ```sh
-npm test       # focused unit tests
-npm run check # TypeScript check
-npm run build # TypeScript check + production bundle in dist/
-npm run preview # inspect the production build on localhost:4173
+npm test        # 55 focused tests
+npm run check   # TypeScript
+npm run build   # verify pinned vision assets, check types, build dist/
+npm run preview # inspect the production build
 ```
 
-All dependencies are pinned in `package-lock.json`. MediaPipe JavaScript/WASM and the version-1 hand model are bundled locally; fonts are also self-hosted. No third-party model request is needed at runtime.
+Dependencies are pinned. The version-1 hand model, MediaPipe 0.10.32 runtime/WASM, and fonts are bundled and served from the same origin. Runtime model requests do not depend on a third-party CDN.
 
-## What works
+## Conversation
 
-- **Conversation:** explicit start/pause for browser speech recognition, interim/final captions, three text sizes, an expanded caption view, text replies, speech synthesis, editable quick phrases, clear and text-file export.
-- Captions pause before text-to-speech and resume after playback if previously listening. Speech playback can be stopped. Switching workspaces stops speech/audio and retains the conversation in memory.
-- **Voice cues:** optional relative microphone level, plus a rolling 30-second words-per-minute estimate while captions are listening (after at least 8 seconds). Level depends on distance, device gain, and ambient sound. These are not emotion labels or calibrated decibels.
-- **ASL practice:** five static handshapes (A, B, L, V, Y), original simplified illustrations, explicit thumb/finger instructions, mirrored preview, landmark overlay, feedback, and a continuous one-second matching hold. Either hand is supported by distance/angle rules.
-- Permission and service errors include recovery guidance. Sample content is explicitly labeled and removed when real conversation starts.
+A single shared canvas holds captions and the attached reply composer, with quick phrases and optional voice cues in its side rail. Start/pause captions explicitly, change caption size, expand the canvas, type replies, speak them, and export or clear the transcript. Recognition pauses around speech playback to reduce feedback.
 
-## Privacy and limitations
+Voice cues show **relative microphone level**, plus an estimated rolling words-per-minute pace after eight seconds of captioning. They do not infer emotions or calibrated loudness. A clearly labeled sample is available when speech services cannot connect.
 
-- Transcript, interim captions, typed replies, and edited phrases stay in React memory. They survive workspace navigation, but clear on refresh/close. Only caption size and completed letters are stored locally. Transcript export happens only when requested.
-- Common does not record audio or upload camera video. Camera frames are processed on the device. Browser speech recognition **may send audio to its provider** and usually needs an internet connection. Browser text-to-speech voices can also depend on the browser/OS and may use online services.
-- Desktop Chrome is the target. Browser speech support varies; typed replies remain available when recognition fails. The in-app browser tested here returned a speech-provider network error; successful real-audio transcription remains a manual Chrome acceptance check.
-- The matcher is a deliberately limited geometry heuristic, not a trained ASL classifier. It may accept incorrect poses or reject correct ones, especially under occlusion, foreshortening, poor lighting, rotation, or atypical hand anatomy. Hold one upright hand with palm facing the camera. It does not verify palm orientation or every ASL distinction.
-- Practice is **not** sentence translation, an ASL fluency assessment, or a replacement for a Deaf instructor/interpreter. The illustrations are simplified; use the linked ASL University reference for detailed examples. No Deaf-user usability study has been completed.
-- No emotion inference, speaker diarization, medical use, or arbitrary sign recognition is claimed.
+## Sign studio
 
-## Architecture
+Camera, trainer, and captured text share one workspace. **Focus sign studio** opens a compact view for recording a demo; Escape exits it.
 
-React + TypeScript + Vite, with Lucide icons and self-hosted DM Sans/Manrope fonts.
+Supported letters: **A, B, C, D, F, H, I, L, M, N, O, S, T, U, V, W, Y**.
 
-- `src/components/Conversation.tsx`: conversation UI, speech synthesis coordination, preferences, export, and quick phrases.
-- `src/lib/speech.ts`: typed browser recognition adapter; per-session generations discard stale callbacks.
-- `src/lib/transcript.ts`: pure reducer, deduplication, sample/live boundaries, and export formatting.
-- `src/lib/audio.ts`: optional Web Audio microphone analyser, cancellable startup, cleanup, pace estimation.
-- `src/components/Practice.tsx`: lazy camera/model startup, inference at at most 10 fps, video-aligned canvas, stable holds, progress, and cleanup. Pending permission/model results are invalidated when cancelled.
-- `src/lib/handshape.ts`: normalized finger-joint angle/distance rules and a stable-hold timer, independent of UI.
+- Eleven letters have built-in geometric checks. These use normalized joint angles/distances, thumb placement, finger spread, and MediaPipe world landmarks when available. H/U are distinguished by image orientation.
+- **C, M, N, O, S, and T require personal examples.** These shapes are curved or easily confused when the thumb is occluded. All six must be recorded before the personal matcher emits any of that group. Partial groups remain unavailable.
+- Every letter can be personalized. The matcher builds a palm-relative, scale/mirror-normalized pose vector and compares it with local examples. Far-away or ambiguous neighbors are rejected; no accuracy percentage is claimed.
+- **Free sign-to-text** emits a supported letter after a stable 900ms hold. A held pose emits once. To repeat a letter, lower your hand for at least 300ms, then show it again. Space, undo, editing, copy, and speak controls are included.
+- **Words & demo** offers DAD, DAY, WILL, LILY, and **“Hi, this is Common”**. This is guided fingerspelling: only the next correctly matched letter advances the phrase. Punctuation/case are formatted as the accepted prefix grows. The phrase is never filled from one pose or a demo playback button.
 
-Device modules use idle/loading/active/error states. Tracks, animation loops, and model resources are released on stop or workspace departure. Inference uses CPU for compatibility; it can briefly occupy the main thread on slower devices.
+### Prepare “Hi, this is Common” for the reel
 
-## Validation
+1. Open **Sign studio → Set up the demo phrase**. Turn on the camera and allow access.
+2. Make the displayed H handshape. Select **Record H**, then hold still for 16 clear frames (about 1–2 seconds). This labels your example; it does not certify that you made the correct ASL shape.
+3. Repeat the guided setup for **I, T, S, C, O, M, N**, using the same hand, framing, and lighting you will film with. Originals and simplified diagrams are linked to ASL University for reference. Recording restarts if the hand leaves the frame, another hand appears, or the pose moves substantially.
+4. After N is saved, the app opens the demo phrase. Enter focus view. Fingerspell **H I T H I S I S C O M M O N**.
+5. Hold each letter steadily. For the **second M**, lower your hand for at least 300ms before forming M again. The readable result becomes **Hi, this is Common** only as the letters match.
+6. Rehearse before recording. Re-record examples that are ambiguous. The matcher can refuse a letter; it does not force the closest guess. Do not present manually edited text as automatic recognition.
 
-Automated tests cover transcript interim/final transitions, duplicate/blank entries, sample/live boundaries, Unicode export, five synthetic handshapes with mirrored hands, wrong poses, scale normalization, absent/clipped/distant hands, thumb/spread checks, interrupted holds, speech interruption/permission errors/stale results, microphone cleanup, late permission grants, and pace estimates.
+Re-record a letter from its reference panel, or use **Delete personal examples** to remove saved calibration data. Change to free letter practice to edit captured text manually. The tutorial checks only handshape features; fingerspelling English words is not a translation of full ASL grammar or signed vocabulary.
 
-Browser checks completed during implementation:
+## Privacy and practical limits
 
-- Desktop and 390-pixel layouts; selecting lessons and reference instructions.
-- Sample labeling, quick reply → actual transcript, caption scaling, and transcript retention across navigation.
-- Spoken-reply UI lifecycle (begin/end), caption startup and network-error recovery.
-- Exported text file inspected and matched the typed reply.
-- Camera permission-pending startup and cancellation. Real camera recognition has **not** been verified with a signer.
+- Conversation content, edits, and quick phrases stay in React memory until cleared, refreshed, or closed. Conversation text survives switching workspaces. It is exported only when requested.
+- Caption size, practiced letters, and **personal pose vectors** are stored in browser localStorage. No calibration photos or video are saved. The local measurements can be deleted from Sign studio; they are never committed to Git or sent to a backend.
+- Camera frames are processed on your device. Common does not record audio. Browser speech recognition **may send audio to its provider**; browser/OS speech synthesis voices may also use online services. An internet connection may be needed.
+- Recognition is experimental. Occlusion, lighting, camera perspective, hand anatomy, and the limitations of predicted landmarks can cause false matches or rejections. Personal examples improve adaptation but do not prove accuracy. M/N/T can remain ambiguous even after setup.
+- Use one clearly visible hand and follow the reference orientation. This is not a fluency assessment, arbitrary signed-word translator, interpreter replacement, or medical device. J and Z motion recognition and the rest of the alphabet are outside the current supported set.
+- Desktop Chrome is the target. Typed replies work if speech recognition is unavailable. Real-camera/signing accuracy and successful live speech transcription still need hands-on acceptance testing; they are not established by synthetic landmark tests.
+- No Deaf-user study or instructor validation has been completed. Describe authorship and AI assistance accurately in the competition submission. No endorsement by ASL University, an elected official, or a disability organization is claimed.
 
-Before recording or submitting, complete these manual checks in **desktop Chrome**:
+## Implementation and validation
 
-- [ ] Allow the microphone; say two sentences and verify finalized words, interim captions, and pause.
-- [ ] While listening, speak a typed reply; confirm no self-caption feedback and automatic resumption.
-- [ ] Enable voice cues; verify relative level changes and estimated pace after speaking for 10–30 seconds.
-- [ ] Deny camera/microphone once; verify recovery guidance and that text replies still work.
-- [ ] Allow the camera; perform A/B/L/V/Y with each hand. Hold each for a second, try incorrect poses, remove the hand, and verify the hold resets. If a pose fails, adjust the heuristic against observed landmarks rather than claiming an accuracy rate.
-- [ ] Stop or navigate away; verify browser camera/microphone indicators turn off. Test cancellation while permission or model loading is pending.
-- [ ] Keyboard through navigation, caption settings, reply controls, and About dialog; test Escape and reduced motion.
-- [ ] Download the transcript, clear the session, and refresh; only display preferences/progress should remain.
+- `src/lib/handshape.ts`: supported lessons, quality checks, built-in geometry rules.
+- `src/lib/calibration.ts`: validated local profiles and conservative personal-example recognition.
+- `src/lib/fingerspelling.ts`: stable capture, neutral/repeat gating, phrase-prefix formatting.
+- `src/hooks/useHandCamera.ts`: cancellable camera/model loading, bounded inference (~12fps), video-aligned overlay, and resource cleanup.
+- `src/lib/speech.ts`, `audio.ts`, `transcript.ts`: speech session boundaries, audio levels/pace, transcript reducer/export.
 
-## Two-minute demo script
+The 55 tests cover built-in synthetic handshapes and mirrored geometry, requests for calibration, invalid/clipped/distant hands, scale normalization, thumb/spread checks, profile validation, ambiguous/distant personal examples, repeat-letter gating, exact demo phrase coverage/prefix formatting, transcript transitions/export, recognition permission/network/session boundaries, audio cleanup, and pace calculation. They do not measure real-world recognition accuracy.
 
-**0:00–0:15 — The problem.** “Communication should not depend on whether two people hear or speak in the same way. Common gives both sides a shared space.” Show the conversation workspace.
+Browser QA includes the desktop and 390px layouts, all lesson controls, guided-demo selection/setup entry, focused studio and Escape, sign text alongside the trainer, sample/quick replies, and transcript navigation retention. The original in-app speech test returned a provider network error, with a recoverable UI message. Actual speech-provider connectivity, microphone levels, every camera letter, and calibration accuracy require a real-device rehearsal.
 
-**0:15–0:50 — A conversation.** Start captions in Chrome and have a partner speak. Show interim/final text, enlarge captions, then type a reply and select Speak reply. Explain how the app pauses recognition during playback. If the speech provider is unavailable, use the clearly labeled sample and disclose the limitation.
+Manual acceptance before filming:
 
-**0:50–1:10 — Context.** Enable microphone cues and demonstrate relative loudness and pace. “These describe sound, not someone’s emotions.” Show a quick phrase and export.
+- [ ] Chrome captions finalize actual spoken words; pause/resume and spoken replies avoid feedback.
+- [ ] Real microphone levels respond and estimated pace appears after speaking.
+- [ ] Camera permission denial/cancel/disconnect recover without losing typed communication.
+- [ ] Record demo examples; confirm both correct letters and deliberately wrong poses, including ambiguous M/N/T and repeated M.
+- [ ] Switching away or stopping releases the camera, model, animation loop, microphone, and speech playback.
+- [ ] Keyboard through controls, Escape from dialogs/focus view, and reduced-motion display.
+- [ ] Export/clear transcript, refresh, and confirm only declared preferences/profiles remain.
 
-**1:10–1:45 — Learn a little.** Open ASL practice, choose L, follow the reference, start camera, and hold the matching shape. Show a wrong pose resetting the timer, then the completion marker. “This checks a few introductory handshapes, not complete ASL.”
+## Netlify
 
-**1:45–2:00 — How and why.** Explain React, browser speech, Web Audio, and MediaPipe landmarks plus geometry rules. Mention video stays local and the next step is feedback from Deaf users and instructors. Stop the camera.
+The repository includes **`netlify.toml`**. In Netlify, choose **Add new project → Import an existing project**, select GitHub and **HassaanVani/CAC-2026**, and use branch **main**. No secrets or environment variables are required.
 
-## HTTPS hosting
+- Build command: **`npm run build`**
+- Publish directory: **`dist`**
+- Node version: **22**, configured in the repository
 
-Build with `npm ci && npm run build`. Publish **the contents of `dist/`** to any static HTTPS host (for example Netlify, Vercel, or Cloudflare Pages). Build command: `npm run build`; output directory: `dist`; no environment variables. No public deployment has been made by this task.
+Netlify serves the site over HTTPS, which camera/microphone APIs need. The configuration sets the WASM and `.task` content types, same-origin camera/microphone permission policy, and revalidation for unversioned model/runtime assets. Keep `dist/assets`, `dist/models`, `dist/wasm`, `dist/licenses`, and logo files intact. No redirect fallback is necessary: navigation uses React state rather than URL routes. Avoid embedding the app in an iframe for the demo.
 
-Keep `/wasm/`, `/models/`, `/licenses/`, and `/assets/` intact. Serve `.wasm` as `application/wasm`, JavaScript as a JavaScript MIME type, and `.task` as a binary asset. Do not rewrite those asset requests to the HTML shell. There is no client-side URL router, so SPA rewrite rules are unnecessary. Allow camera and microphone for the site itself; embedding in an iframe requires explicit camera/microphone permission and is not the target.
+Alternatively, run `npm ci && npm run build` and upload the **contents of `dist/`** using Netlify's manual deploy flow. The local `artifacts/common-web.zip` package, when generated, has these contents at its root. A GitHub push makes the app hostable; it does not by itself create a Netlify project or verify a live deployment. After connecting Netlify, test the deployed origin because localhost permissions do not transfer.
 
-For subdirectory hosting, set Vite's `base` to the subdirectory before building. MediaPipe resolves assets using `import.meta.env.BASE_URL`. No COOP/COEP headers or service worker are required. After deployment, test camera/mic permissions on the deployed origin; localhost permissions do not transfer.
+[Official Vite-on-Netlify guide](https://docs.netlify.com/build/frameworks/framework-setup-guides/vite/).
 
-## References and credits
+## Two-minute reel outline
 
-- [ASL University / Dr. Bill Vicars — fingerspelling reference](https://www.lifeprint.com/asl101/fingerspelling/abc.htm). Lesson wording and vector diagrams in Common are original simplified guides; no Lifeprint artwork is bundled. The project is not endorsed by ASL University.
-- [Google MediaPipe Hand Landmarker web guide](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js) and [`@mediapipe/tasks-vision`](https://www.npmjs.com/package/@mediapipe/tasks-vision), pinned at 0.10.32, Apache-2.0.
+**0:00–0:20:** Show the Common C/ear mark and explain the communication gap the app addresses.
+
+**0:20–0:55:** Demonstrate captions, a typed spoken reply, and optional sound cues. Explain that sound level and pace are not emotion detection.
+
+**0:55–1:35:** Open the sign studio in focus view with your real calibration already prepared. Fingerspell **“Hi, this is Common”**. Show the repeated-M pause and readable output. Explain that this is guided fingerspelling with local hand landmarks and personal examples.
+
+**1:35–2:00:** Show a wrong pose being rejected, name the React/MediaPipe/browser API architecture, and explain that Deaf-user and instructor feedback is the next step. Stop the camera.
+
+## Branding and credits
+
+The original C/ear logo is available as `public/common-mark.svg`, `public/common-logo.svg`, and `public/favicon.svg`. [Brand notes](docs/BRAND.md).
+
+- [ASL University / Dr. Bill Vicars: fingerspelling reference](https://www.lifeprint.com/asl101/fingerspelling/abc.htm). Common's diagrams/lesson wording are simplified original work; Lifeprint artwork is not bundled.
+- [MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/web_js), `@mediapipe/tasks-vision` **0.10.32**, Apache-2.0.
 - [Google version-1 hand model](https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task), SHA-256 `fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`.
-- [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API), [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API), and [Lucide](https://lucide.dev/) (ISC).
-- DM Sans and Manrope, bundled through Fontsource under the SIL Open Font License; license texts are included in `public/licenses/`.
-
-Describe authorship and AI assistance accurately in the competition submission. This project is independently built and makes no claim of endorsement by an elected official or disability organization.
+- [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API), [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API), [Lucide](https://lucide.dev/) (ISC), React (MIT).
+- Self-hosted DM Sans and Manrope through Fontsource (SIL Open Font License). License notices are in `public/licenses/`.
