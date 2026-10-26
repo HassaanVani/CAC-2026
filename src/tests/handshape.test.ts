@@ -4,14 +4,13 @@ import {
   matchHandshape,
   StableHold,
   recognizeLetter,
-  personalLetters,
 } from "../lib/handshape";
 // Synthetic landmark geometry tests rule behavior, not real-world ASL accuracy.
 import { fixture } from "./fixtures";
 
 describe("limited handshape matching", () => {
   for (const letter of letters) {
-    if (personalLetters.includes(letter)) {
+    if (["M", "N", "S", "T"].includes(letter)) {
       it(`requests personal calibration for ${letter}`, () =>
         expect(matchHandshape(fixture(letter), letter).match).toBe(false));
       continue;
@@ -83,5 +82,27 @@ describe("stable one-second hold", () => {
     expect(hold.update(true, 2000)).toBe(1);
     hold.reset();
     expect(hold.update(true, 2100)).toBe(0);
+  });
+});
+
+describe("C/O aperture geometry", () => {
+  it("recognizes both curves without any calibration", () => {
+    expect(recognizeLetter(fixture("C"))).toBe("C");
+    expect(recognizeLetter(fixture("O"))).toBe("O");
+  });
+  it("uses world geometry for a side view with a foreshortened knuckle row", () => {
+    const world = fixture("C");
+    const image = world.map((p) => ({ ...p, x: 0.5 + (p.x - 0.5) * 0.02 }));
+    expect(matchHandshape(image, "C", world).match).toBe(true);
+    expect(recognizeLetter(image, world)).toBe("C");
+  });
+  it("rejects fists, straight hands, and the uncertain aperture between C and O", () => {
+    for (const letter of ["C", "O"] as const) {
+      expect(matchHandshape(fixture("A"), letter).match).toBe(false);
+      expect(matchHandshape(fixture("B"), letter).match).toBe(false);
+    }
+    const between = fixture("C");
+    between[4] = { ...between[8], x: between[8].x + 0.35 * 0.26 };
+    expect(recognizeLetter(between)).toBeNull();
   });
 });

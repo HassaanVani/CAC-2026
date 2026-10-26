@@ -152,9 +152,9 @@ export default function App() {
           </ul>
           <p>
             Sign studio supports 17 letters, including the demo phrase “Hi, this
-            is Common.” C, M, N, O, S, and T need personal examples. Handshape
-            feedback is experimental; it does not translate full ASL or assess
-            fluency.
+            is Common.” C and O include built-in curve matching; M, N, S, and T
+            use independent personal examples. Handshape feedback is
+            experimental; it does not translate full ASL or assess fluency.
           </p>
           <a
             href="https://www.lifeprint.com/asl101/fingerspelling/abc.htm"

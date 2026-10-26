@@ -1,3 +1,4 @@
+import { palmFrame } from "./palmFrame";
 export const letters = [
   "A",
   "B",
@@ -46,7 +47,7 @@ export const lessons: Record<
     title: "An open curve.",
     instruction:
       "Curve all four fingers and your thumb into the shape of a C. Keep an open gap between the fingertips and thumb.",
-    tip: "This curved handshape needs a short personal calibration.",
+    tip: "Leave a clear gap between the thumb and fingertips for C.",
     fingers: [false, false, false, false],
   },
   H: {
@@ -165,14 +166,7 @@ function angle(a: Point, b: Point, c: Point) {
         Math.PI
     : 0;
 }
-export const personalLetters: readonly Letter[] = [
-  "C",
-  "M",
-  "N",
-  "O",
-  "S",
-  "T",
-];
+export const recordingRequiredLetters: readonly Letter[] = ["M", "N", "S", "T"];
 export function handQuality(points: Point[]): string | null {
   if (
     points.length !== 21 ||
@@ -185,8 +179,8 @@ export function handQuality(points: Point[]): string | null {
     return "Move your whole hand into the frame.";
   const scale = distance(points[0], points[9]);
   if (scale < 0.07) return "Bring your hand a little closer.";
-  if (distance(points[5], points[17]) / scale < 0.3)
-    return "Turn your hand so its shape is clearly visible.";
+  // Side-on C/O poses naturally foreshorten the knuckle row. Do not reject
+  // them before world landmarks and the shape matcher can examine the hand.
   return null;
 }
 export type Match = { match: boolean; message: string };
@@ -197,7 +191,7 @@ export function matchHandshape(
 ): Match {
   const problem = handQuality(points);
   if (problem) return { match: false, message: problem };
-  if (personalLetters.includes(letter))
+  if (recordingRequiredLetters.includes(letter))
     return {
       match: false,
       message: `Set up personal examples for ${letter} to begin matching.`,
@@ -225,6 +219,7 @@ export function matchHandshape(
   const scale = distance(points[0], points[9]);
   if (scale < 0.0001)
     return { match: false, message: "Show your whole palm clearly." };
+  if (letter === "C" || letter === "O") return matchCurve(points, letter);
   const fingerBases = [5, 9, 13, 17];
   const extended = fingerBases.map(
     (base) =>
@@ -240,6 +235,17 @@ export function matchHandshape(
       match: false,
       message: `${expected[mismatch] ? "Extend" : "Curl"} your ${names[mismatch]} finger.`,
     };
+  if (letter === "A") {
+    const local = palmFrame(points);
+    if (
+      !local ||
+      [5, 9, 13].some((base) => local[base + 3].y - local[base].y > -0.1)
+    )
+      return {
+        match: false,
+        message: "Curl your fingertips down into a fist for A.",
+      };
+  }
   const thumbOpen =
     angle(points[2], points[3], points[4]) > 145 &&
     distance(points[4], points[5]) / scale > 0.65;
@@ -305,6 +311,65 @@ export function matchHandshape(
   )
     return { match: false, message: "Bring your four fingers together." };
   return { match: true, message: "That handshape matches. Hold steady…" };
+}
+/** C and O differ primarily at the thumb/fingertip aperture, rather than a
+ * binary "all fingers curled" bitmask. World coordinates handle side views. */
+function matchCurve(points: Point[], letter: "C" | "O"): Match {
+  const local = palmFrame(points);
+  if (!local)
+    return {
+      match: false,
+      message: "Turn your hand slightly so the curve is visible.",
+    };
+  const bases = [5, 9, 13, 17];
+  const straight = bases.filter(
+    (base) => angle(points[base], points[base + 1], points[base + 3]) > 165,
+  ).length;
+  if (straight > 1)
+    return {
+      match: false,
+      message: "Curve your fingers rather than holding them straight.",
+    };
+  const tipHeight =
+    bases.reduce((sum, base) => sum + local[base + 3].y - local[base].y, 0) / 4;
+  const forwardTips = bases.filter(
+    (base) => local[base + 3].y - local[base].y >= -0.12,
+  ).length;
+  const indexForward = local[8].y - local[5].y >= -0.12;
+  const middleForward = local[12].y - local[9].y >= -0.12;
+  if (
+    tipHeight < -0.12 ||
+    !indexForward ||
+    !middleForward ||
+    forwardTips < (letter === "C" ? 3 : 2)
+  )
+    return {
+      match: false,
+      message:
+        "Lift your curved fingertips away from the palm; avoid making a fist.",
+    };
+  const gap = distance(points[4], points[8]) / distance(points[0], points[9]);
+  const middleGap =
+    distance(points[4], points[12]) / distance(points[0], points[9]);
+  if (letter === "O") {
+    if (gap > 0.3 || middleGap > 0.48)
+      return {
+        match: false,
+        message: "Bring your curved fingertips to your thumb to close O.",
+      };
+    return { match: true, message: "The closed O curve matches. Hold steady…" };
+  }
+  if (gap < 0.42)
+    return {
+      match: false,
+      message: "Leave an open gap between your thumb and fingertips for C.",
+    };
+  if (gap > 1.5 || middleGap > 1.7)
+    return {
+      match: false,
+      message: "Bring your thumb and curved fingers a little closer.",
+    };
+  return { match: true, message: "The open C curve matches. Hold steady…" };
 }
 /** A free-recognition result is never conditioned on the selected lesson. */
 export function recognizeLetter(

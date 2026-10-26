@@ -16,7 +16,7 @@ npm run dev
 Open Vite's printed localhost URL. Camera/microphone access needs localhost or HTTPS; opening the HTML file directly does not work.
 
 ```sh
-npm test        # 55 focused tests
+npm test        # 71 focused tests
 npm run check   # TypeScript
 npm run build   # verify pinned vision assets, check types, build dist/
 npm run preview # inspect the production build
@@ -36,9 +36,10 @@ Camera, trainer, and captured text share one workspace. **Focus sign studio** op
 
 Supported letters: **A, B, C, D, F, H, I, L, M, N, O, S, T, U, V, W, Y**.
 
-- Eleven letters have built-in geometric checks. These use normalized joint angles/distances, thumb placement, finger spread, and MediaPipe world landmarks when available. H/U are distinguished by image orientation.
-- **C, M, N, O, S, and T require personal examples.** These shapes are curved or easily confused when the thumb is occluded. All six must be recorded before the personal matcher emits any of that group. Partial groups remain unavailable.
-- Every letter can be personalized. The matcher builds a palm-relative, scale/mirror-normalized pose vector and compares it with local examples. Far-away or ambiguous neighbors are rejected; no accuracy percentage is claimed.
+- Thirteen letters have built-in geometric checks, including direct C/O aperture checks. These use normalized joint angles/distances, thumb placement, finger spread, and MediaPipe world landmarks when available. H/U are distinguished by image orientation.
+- **M, N, S, and T use personal examples. Each recorded letter works independently immediately after recording.** There is no all-six calibration gate. Recording similar letters gives the matcher competing examples; identical or nearly tied matches are still rejected.
+- Every letter can be personalized. The matcher uses palm-relative, scale/mirror-normalized measurements, emphasizes thumb/fingertip positions, and preserves signed depth in new recordings. Curled-index orientation does not affect these matches. Existing 61-feature recordings remain compatible; new recordings append depth features. An exact match is no longer rejected solely because the next-best label is close. Far-away or relatively ambiguous neighbors are still rejected; no accuracy percentage is claimed.
+- C/O matching allows foreshortened side views and checks curved fingertips plus the open/closed thumb aperture, without requiring calibration. An uncertain aperture is left blank unless a personal example resolves it.
 - **Free sign-to-text** emits a supported letter after a stable 900ms hold. A held pose emits once. To repeat a letter, lower your hand for at least 300ms, then show it again. Space, undo, editing, copy, and speak controls are included.
 - **Words & demo** offers DAD, DAY, WILL, LILY, and **“Hi, this is Common”**. This is guided fingerspelling: only the next correctly matched letter advances the phrase. Punctuation/case are formatted as the accepted prefix grows. The phrase is never filled from one pose or a demo playback button.
 
@@ -51,7 +52,7 @@ Supported letters: **A, B, C, D, F, H, I, L, M, N, O, S, T, U, V, W, Y**.
 5. Hold each letter steadily. For the **second M**, lower your hand for at least 300ms before forming M again. The readable result becomes **Hi, this is Common** only as the letters match.
 6. Rehearse before recording. Re-record examples that are ambiguous. The matcher can refuse a letter; it does not force the closest guess. Do not present manually edited text as automatic recognition.
 
-Re-record a letter from its reference panel, or use **Delete personal examples** to remove saved calibration data. Change to free letter practice to edit captured text manually. The tutorial checks only handshape features; fingerspelling English words is not a translation of full ASL grammar or signed vocabulary.
+Use **Add example** to add another recording (up to four batches per letter), or use **Delete personal examples** to remove saved calibration data. Change to free letter practice to edit captured text manually. The tutorial checks only handshape features; fingerspelling English words is not a translation of full ASL grammar or signed vocabulary.
 
 ## Privacy and practical limits
 
@@ -66,12 +67,13 @@ Re-record a letter from its reference panel, or use **Delete personal examples**
 ## Implementation and validation
 
 - `src/lib/handshape.ts`: supported lessons, quality checks, built-in geometry rules.
-- `src/lib/calibration.ts`: validated local profiles and conservative personal-example recognition.
+- `src/lib/calibration.ts`: backwards-compatible local profiles, thumb-weighted matching, and independent personal-example recognition.
+- `src/lib/palmFrame.ts`: shared anatomical coordinate frame with camera-oriented signed depth.
 - `src/lib/fingerspelling.ts`: stable capture, neutral/repeat gating, phrase-prefix formatting.
 - `src/hooks/useHandCamera.ts`: cancellable camera/model loading, bounded inference (~12fps), video-aligned overlay, and resource cleanup.
 - `src/lib/speech.ts`, `audio.ts`, `transcript.ts`: speech session boundaries, audio levels/pace, transcript reducer/export.
 
-The 55 tests cover built-in synthetic handshapes and mirrored geometry, requests for calibration, invalid/clipped/distant hands, scale normalization, thumb/spread checks, profile validation, ambiguous/distant personal examples, repeat-letter gating, exact demo phrase coverage/prefix formatting, transcript transitions/export, recognition permission/network/session boundaries, audio cleanup, and pace calculation. They do not measure real-world recognition accuracy.
+The 71 tests cover built-in synthetic handshapes and mirrored geometry, requests for calibration, invalid/clipped/distant hands, scale normalization, thumb/spread checks, profile validation, ambiguous/distant personal examples, repeat-letter gating, exact demo phrase coverage/prefix formatting, transcript transitions/export, recognition permission/network/session boundaries, audio cleanup, and pace calculation. Additional regressions reproduce the former all-six read-back lockout, the fixed-distance-gap veto of an exact match, noisy curled-index orientation, legacy profile compatibility, and C/O side-view/aperture matching. They do not measure real-world recognition accuracy.
 
 Browser QA includes the desktop and 390px layouts, all lesson controls, guided-demo selection/setup entry, focused studio and Escape, sign text alongside the trainer, sample/quick replies, and transcript navigation retention. The original in-app speech test returned a provider network error, with a recoverable UI message. Actual speech-provider connectivity, microphone levels, every camera letter, and calibration accuracy require a real-device rehearsal.
 

@@ -24,7 +24,7 @@ import {
   letters,
   lessons,
   matchHandshape,
-  personalLetters,
+  recordingRequiredLetters,
   StableHold,
   type Letter,
   type Point,
@@ -191,17 +191,27 @@ export default function Practice() {
         return;
       }
       const vector = poseVector(image, world);
-      if (!vector) return;
+      if (!vector) {
+        recordingRef.current.samples = [];
+        setRecordProgress(0);
+        setFeedback(
+          "Hand landmarks are unstable. Turn your hand slightly and hold again.",
+        );
+        return;
+      }
       const job = recordingRef.current,
         last = job.samples[job.samples.length - 1];
-      if (last && poseDistance(vector, last) > 0.12) {
+      if (last && poseDistance(vector, last, job.letter) > 0.16) {
         job.samples = [];
         setFeedback("Hold the same shape steady; collecting again.");
       }
       job.samples.push(vector);
       setRecordProgress(job.samples.length / sampleCount);
       if (job.samples.length >= sampleCount) {
-        setProfiles((old) => ({ ...old, [job.letter]: job.samples }));
+        setProfiles((old) => ({
+          ...old,
+          [job.letter]: [...(old[job.letter] || []), ...job.samples].slice(-64),
+        }));
         recordingRef.current = null;
         setRecording(false);
         setRecordProgress(0);
@@ -289,7 +299,6 @@ export default function Practice() {
   const camera = useHandCamera(onFrame);
   const active = camera.state === "active",
     loading = camera.state === "loading";
-  const setupNeeded = personalLetters.filter((l) => !profiles[l]);
   const next = letters[(letters.indexOf(target) + 1) % letters.length];
   async function copy() {
     try {
@@ -368,8 +377,8 @@ export default function Practice() {
                 <small>
                   {profiles[l]
                     ? "Personal"
-                    : personalLetters.includes(l)
-                      ? "Set up"
+                    : recordingRequiredLetters.includes(l)
+                      ? "Record"
                       : "Ready"}
                 </small>
               </button>
@@ -684,13 +693,13 @@ export default function Practice() {
               <strong>
                 {profiles[target]
                   ? "Personal example saved"
-                  : personalLetters.includes(target)
-                    ? "Personal setup needed"
+                  : recordingRequiredLetters.includes(target)
+                    ? "Record this letter to get started"
                     : "Make it more personal"}
               </strong>
               <span>
                 {profiles[target]
-                  ? "Re-record if lighting or camera position changes."
+                  ? "Add another example to cover a new angle or lighting."
                   : "Record your own shape for a closer match."}
               </span>
             </div>
@@ -710,15 +719,13 @@ export default function Practice() {
               {recording
                 ? "Cancel recording"
                 : profiles[target]
-                  ? "Re-record letter"
+                  ? "Add example"
                   : `Record ${target}`}
             </button>
-            {setupNeeded.length > 0 && (
-              <small>
-                For C, M, N, O, S, T: set up all six to distinguish similar
-                shapes. {6 - setupNeeded.length}/6 ready.
-              </small>
-            )}
+            <small>
+              Each recorded letter works on its own. Record similar letters
+              separately to help distinguish them.
+            </small>
           </div>
           <button
             className="text-button demo-setup-button"
