@@ -4,6 +4,7 @@ import {
   lessons,
   matchHandshape,
   StableHold,
+  recognizeLetter,
   type Letter,
   type Point,
 } from "../lib/handshape";
@@ -20,7 +21,15 @@ function fixture(letter: Letter): Point[] {
     p[base] = { x, y: 0.59, z: 0 };
     if (lessons[letter].fingers[i]) {
       const spread =
-        letter === "V" ? (i === 0 ? -0.08 : i === 1 ? 0.08 : 0) : 0;
+        letter === "V" || letter === "W"
+          ? i === 0
+            ? -0.08
+            : i === 1
+              ? 0.08
+              : i === 2
+                ? 0.1
+                : 0
+          : 0;
       p[base + 1] = { x: x + spread * 0.3, y: 0.44, z: 0 };
       p[base + 2] = { x: x + spread * 0.7, y: 0.33, z: 0 };
       p[base + 3] = { x: x + spread, y: 0.23, z: 0 };
@@ -42,6 +51,8 @@ function fixture(letter: Letter): Point[] {
     p[3] = { x: 0.37, y: 0.63, z: 0 };
     p[4] = { x: 0.48, y: 0.65, z: 0 };
   }
+  if (letter === "D") p[4] = { ...p[12] };
+  if (letter === "F") p[4] = { ...p[8] };
   return p;
 }
 describe("limited handshape matching", () => {
@@ -49,6 +60,7 @@ describe("limited handshape matching", () => {
     it(`recognizes the synthetic ${letter} shape on either hand`, () => {
       const p = fixture(letter);
       expect(matchHandshape(p, letter).match).toBe(true);
+      expect(recognizeLetter(p)).toBe(letter);
       expect(
         matchHandshape(
           p.map((v) => ({ ...v, x: 1 - v.x })),

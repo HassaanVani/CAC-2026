@@ -206,7 +206,11 @@ export default function Practice() {
               result.landmarks.length > 1
                 ? { match: false, message: "Keep just one hand in the frame." }
                 : points
-                  ? matchHandshape(points, target.current)
+                  ? matchHandshape(
+                      points,
+                      target.current,
+                      result.worldLandmarks[0],
+                    )
                   : {
                       match: false,
                       message: "No hand detected. Raise one hand into view.",
@@ -263,7 +267,9 @@ export default function Practice() {
               aria-pressed={letter === l}
               onClick={() => select(l)}
             >
-              <span className="lesson-number">0{i + 1}</span>
+              <span className="lesson-number">
+                {String(i + 1).padStart(2, "0")}
+              </span>
               <strong>{l}</strong>
               {completed.includes(l) ? (
                 <CheckCircle2 size={16} />
@@ -449,7 +455,7 @@ export default function Practice() {
           <div>
             <span className="eyebrow">YOUR SMALL STEPS</span>
             <strong>
-              {completed.length} <span>/ 5 letters</span>
+              {completed.length} <span>/ {letters.length} letters</span>
             </strong>
           </div>
           <div className="progress-letters">

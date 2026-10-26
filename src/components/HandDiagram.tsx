@@ -32,7 +32,7 @@ export default function HandDiagram({
         <path d="M82 218 L80 195 Q63 176 69 149 L77 122 Q113 111 166 132 L179 161 Q182 187 159 205 L159 228" />
         {fingers.map((f, i) => {
           const x =
-            letter === "V"
+            letter === "V" || letter === "W"
               ? f.x + (i === 0 ? -6 : i === 1 ? 9 : 0)
               : letter === "Y" && i === 3
                 ? f.x + 16
@@ -57,6 +57,10 @@ export default function HandDiagram({
         })}
         {letter === "L" || letter === "Y" ? (
           <path d="M86 196 Q71 193 58 174 L27 149 Q17 139 25 132 Q32 126 43 134 L78 154 Q95 159 99 176" />
+        ) : letter === "F" ? (
+          <path d="M78 186 Q55 170 65 145 Q72 130 89 136 Q107 143 98 158 Q89 171 78 160" />
+        ) : letter === "D" ? (
+          <path d="M76 186 Q64 173 78 162 L130 156 Q143 157 141 169 Q139 179 126 178 L101 181" />
         ) : letter === "A" ? (
           <path d="M77 190 Q61 175 59 147 L59 119 Q61 107 70 110 Q78 111 78 123 L83 148 Q101 158 100 178" />
         ) : (
