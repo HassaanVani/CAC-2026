@@ -907,6 +907,7 @@ h1 {
   inset: 0;
   opacity: 0;
   background: #1e2d24;
+  pointer-events: none;
 }
 .camera-media.visible {
   opacity: 1;
@@ -923,6 +924,8 @@ h1 {
   object-fit: contain;
 }
 .camera-idle {
+  position: relative;
+  z-index: 1;
   height: 100%;
   display: flex;
   align-items: center;
@@ -964,6 +967,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  z-index: 2;
 }
 .view-status {
   font-size: 9px;
@@ -997,6 +1001,7 @@ h1 {
   border: 1px solid #d8e3c6;
   border-radius: 5px;
   color: #365b30;
+  z-index: 2;
 }
 .live-letter > span {
   font-size: 8px;
