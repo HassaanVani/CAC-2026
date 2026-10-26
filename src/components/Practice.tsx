@@ -8,6 +8,8 @@ import {
   Copy,
   Delete,
   ExternalLink,
+  Expand,
+  X,
   FlipHorizontal2,
   Hand,
   Lightbulb,
@@ -47,6 +49,40 @@ import { readStored, saveStored } from "../lib/storage";
 import { useHandCamera } from "../hooks/useHandCamera";
 import HandDiagram from "./HandDiagram";
 export default function Practice() {
+  const [focused, setFocused] = useState(false);
+  const studioRoot = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focused) return;
+    const previous = document.activeElement as HTMLElement | null;
+    studioRoot.current
+      ?.querySelector<HTMLButtonElement>('[aria-label="Exit studio focus"]')
+      ?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocused(false);
+      if (event.key === "Tab") {
+        const controls = Array.from(
+          studioRoot.current?.querySelectorAll<HTMLElement>(
+            "button:not(:disabled),textarea,select,input,a[href]",
+          ) || [],
+        ).filter((el) => el.offsetParent !== null);
+        if (event.shiftKey && document.activeElement === controls[0]) {
+          event.preventDefault();
+          controls.at(-1)?.focus();
+        } else if (
+          !event.shiftKey &&
+          document.activeElement === controls.at(-1)
+        ) {
+          event.preventDefault();
+          controls[0]?.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("keydown", key);
+      previous?.focus();
+    };
+  }, [focused]);
   const [letter, setLetter] = useState<Letter>("A");
   const [drill, setDrill] = useState<"letters" | "words">("letters");
   const [word, setWord] = useState<string>(demoPhrase),
@@ -280,7 +316,13 @@ export default function Practice() {
     window.speechSynthesis.speak(utterance);
   }
   return (
-    <section className="sign-studio unified-workspace" aria-label="Sign studio">
+    <section
+      ref={studioRoot}
+      role={focused ? "dialog" : undefined}
+      aria-modal={focused ? true : undefined}
+      className={`sign-studio unified-workspace ${drill === "words" ? "word-mode" : ""} ${focused ? "focused" : ""}`}
+      aria-label="Sign studio"
+    >
       <header className="studio-toolbar">
         <div className="segmented" aria-label="Practice mode">
           <button
@@ -296,10 +338,20 @@ export default function Practice() {
             Words & demo
           </button>
         </div>
-        <span className="studio-private">
-          <ShieldCheck size={15} />
-          Camera processing stays on this device
-        </span>
+        <div className="studio-tools">
+          <span className="studio-private">
+            <ShieldCheck size={15} />
+            Camera processing stays on this device
+          </span>
+          <button
+            className="icon-button"
+            aria-label={focused ? "Exit studio focus" : "Focus sign studio"}
+            aria-pressed={focused}
+            onClick={() => setFocused(!focused)}
+          >
+            {focused ? <X size={18} /> : <Expand size={18} />}
+          </button>
+        </div>
       </header>
       <div className="lesson-ribbon">
         {drill === "letters" ? (
@@ -500,6 +552,114 @@ export default function Practice() {
             )}
           </div>
         </div>
+        <section className="sign-composer" aria-labelledby="sign-text-title">
+          <div className="composer-heading">
+            <div>
+              <span className="eyebrow">FROM YOUR HANDS TO THE PAGE</span>
+              <h2 id="sign-text-title">
+                Sign to text
+                <span className="feature-label">Fingerspelling</span>
+              </h2>
+            </div>
+            <label className="capture-switch">
+              <span>{captureEnabled ? "Capture on" : "Capture paused"}</span>
+              <button
+                className="toggle"
+                role="switch"
+                aria-label="Capture recognized letters as text"
+                aria-checked={captureEnabled}
+                onClick={() => {
+                  setCaptureEnabled(!captureEnabled);
+                  capture.current.reset();
+                }}
+              >
+                <span />
+              </button>
+            </label>
+          </div>
+          <label className="sr-only" htmlFor="signed-text">
+            Recognized sign text
+          </label>
+          <textarea
+            id="signed-text"
+            value={text}
+            readOnly={drill === "words"}
+            maxLength={2000}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={
+              drill === "words"
+                ? "Your guided phrase appears here as each letter matches…"
+                : "Hold a supported letter. We’ll give it a little space here…"
+            }
+          />
+          <div className="sign-text-actions">
+            <div>
+              {drill === "letters" && (
+                <>
+                  <button
+                    className="text-button"
+                    onClick={() => setText((old) => (old + " ").slice(0, 2000))}
+                  >
+                    <Space size={15} />
+                    Space
+                  </button>
+                  <button
+                    className="text-button"
+                    disabled={!text}
+                    onClick={() => setText((old) => old.slice(0, -1))}
+                  >
+                    <Delete size={15} />
+                    Undo
+                  </button>
+                </>
+              )}
+              <button
+                className="text-button muted"
+                disabled={!text}
+                onClick={() => {
+                  setText("");
+                  capture.current.reset();
+                  if (drill === "words") {
+                    setWordIndex(0);
+                    setWordDone(false);
+                    setSuccess(false);
+                  }
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            <div>
+              <button
+                className="text-button"
+                disabled={!text}
+                onClick={() => void copy()}
+              >
+                <Copy size={15} />
+                Copy
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!text}
+                onClick={speak}
+              >
+                <Volume2 size={16} />
+                Speak text
+              </button>
+            </div>
+          </div>
+          <p className="composer-explanation">
+            {drill === "words"
+              ? "Guided drill: only the next matching letter advances the phrase."
+              : "Free capture: supported letters appear after a steady hold. Lower your hand for 300ms to repeat a letter."}{" "}
+            Uncertain shapes are left blank.
+          </p>
+          {notice && (
+            <p className="notice" role="status">
+              {notice}
+            </p>
+          )}
+        </section>
         <aside className="training-panel" aria-label="Sign trainer">
           <div className="training-heading">
             <span className="eyebrow">
@@ -577,113 +737,6 @@ export default function Practice() {
           </a>
         </aside>
       </div>
-      <section className="sign-composer" aria-labelledby="sign-text-title">
-        <div className="composer-heading">
-          <div>
-            <span className="eyebrow">FROM YOUR HANDS TO THE PAGE</span>
-            <h2 id="sign-text-title">
-              Sign to text<span className="feature-label">Fingerspelling</span>
-            </h2>
-          </div>
-          <label className="capture-switch">
-            <span>{captureEnabled ? "Capture on" : "Capture paused"}</span>
-            <button
-              className="toggle"
-              role="switch"
-              aria-label="Capture recognized letters as text"
-              aria-checked={captureEnabled}
-              onClick={() => {
-                setCaptureEnabled(!captureEnabled);
-                capture.current.reset();
-              }}
-            >
-              <span />
-            </button>
-          </label>
-        </div>
-        <label className="sr-only" htmlFor="signed-text">
-          Recognized sign text
-        </label>
-        <textarea
-          id="signed-text"
-          value={text}
-          readOnly={drill === "words"}
-          maxLength={2000}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={
-            drill === "words"
-              ? "Your guided phrase appears here as each letter matches…"
-              : "Hold a supported letter. We’ll give it a little space here…"
-          }
-        />
-        <div className="sign-text-actions">
-          <div>
-            {drill === "letters" && (
-              <>
-                <button
-                  className="text-button"
-                  onClick={() => setText((old) => (old + " ").slice(0, 2000))}
-                >
-                  <Space size={15} />
-                  Space
-                </button>
-                <button
-                  className="text-button"
-                  disabled={!text}
-                  onClick={() => setText((old) => old.slice(0, -1))}
-                >
-                  <Delete size={15} />
-                  Undo
-                </button>
-              </>
-            )}
-            <button
-              className="text-button muted"
-              disabled={!text}
-              onClick={() => {
-                setText("");
-                capture.current.reset();
-                if (drill === "words") {
-                  setWordIndex(0);
-                  setWordDone(false);
-                  setSuccess(false);
-                }
-              }}
-            >
-              Clear
-            </button>
-          </div>
-          <div>
-            <button
-              className="text-button"
-              disabled={!text}
-              onClick={() => void copy()}
-            >
-              <Copy size={15} />
-              Copy
-            </button>
-            <button
-              className="secondary-button"
-              disabled={!text}
-              onClick={speak}
-            >
-              <Volume2 size={16} />
-              Speak text
-            </button>
-          </div>
-        </div>
-        <p className="composer-explanation">
-          {drill === "words"
-            ? "Guided drill: only the next matching letter advances the phrase."
-            : "Free capture: supported letters appear after a steady hold. Lower your hand for 300ms to repeat a letter."}{" "}
-          Uncertain shapes are left blank.
-        </p>
-        {notice && (
-          <p className="notice" role="status">
-            {notice}
-          </p>
-        )}
-      </section>
       <footer className="studio-footer">
         <span>
           {completed.length}/{letters.length} letters practiced ·{" "}

@@ -1,9 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import {
   ArrowDownToLine,
-  ArrowUpRight,
   Check,
-  ChevronDown,
   CircleHelp,
   Expand,
   Mic,
@@ -253,74 +251,94 @@ export default function Conversation({ active }: { active: boolean }) {
   const listening = state === "active" || state === "loading";
 
   return (
-    <div
+    <section
       ref={workspaceRef}
       role={large ? "dialog" : undefined}
       aria-modal={large ? true : undefined}
-      aria-label={large ? "Expanded conversation" : undefined}
-      className={`conversation-layout ${large ? "expanded" : ""}`}
+      aria-label={large ? "Expanded conversation" : "Conversation workspace"}
+      className={`conversation-workspace unified-workspace ${large ? "expanded" : ""}`}
     >
-      <section
-        className="conversation-main"
-        aria-label="Conversation workspace"
-      >
-        <div className="caption-card">
-          <div className="card-toolbar">
-            <span className="eyebrow">
-              <span
-                className={`status-dot ${state === "active" ? "live" : ""}`}
-              />
+      <header className="session-toolbar">
+        <div className="session-label">
+          <span className={`status-dot ${state === "active" ? "live" : ""}`} />
+          <div>
+            <strong>
               {transcript.sample
-                ? "SAMPLE CONVERSATION"
+                ? "Sample conversation"
                 : speaking
-                  ? "SPEAKING YOUR REPLY"
+                  ? "Speaking your reply"
                   : state === "active"
-                    ? "LISTENING"
+                    ? "Listening to your partner"
                     : state === "loading"
-                      ? "CONNECTING"
-                      : "LIVE TRANSCRIPT"}
+                      ? "Connecting microphone…"
+                      : "Your conversation"}
+            </strong>
+            <span>
+              {transcript.sample
+                ? "Illustrative content · not live audio"
+                : "English (US) · live captions"}
             </span>
-            <div className="toolbar-actions">
-              <button
-                className="icon-button"
-                aria-label="Caption display settings"
-                aria-expanded={settings}
-                onClick={() => setSettings(!settings)}
-              >
-                <SlidersHorizontal size={17} />
-              </button>
-              <button
-                className="icon-button"
-                aria-label={
-                  large ? "Exit large text view" : "Open large text view"
-                }
-                aria-pressed={large}
-                onClick={() => setLarge(!large)}
-              >
-                {large ? <X size={19} /> : <Expand size={18} />}
-              </button>
-            </div>
           </div>
-          {settings && (
-            <div className="display-settings">
-              <label htmlFor="caption-size">Caption size</label>
-              <select
-                id="caption-size"
-                value={size}
-                onChange={(e) => setSize(Number(e.target.value))}
-              >
-                <option value={24}>Comfortable</option>
-                <option value={28}>Large</option>
-                <option value={36}>Extra large</option>
-              </select>
-              <button
-                className="text-button"
-                onClick={() => setSettings(false)}
-              >
-                Done
-              </button>
-            </div>
-          )}
+        </div>
+        <div className="session-actions">
+          <button
+            className="icon-button"
+            aria-label="Caption display settings"
+            aria-expanded={settings}
+            onClick={() => setSettings(!settings)}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Download transcript"
+            title="Download transcript"
+            disabled={!transcript.entries.length}
+            onClick={download}
+          >
+            <ArrowDownToLine size={18} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label={large ? "Exit large text view" : "Open large text view"}
+            aria-pressed={large}
+            onClick={() => setLarge(!large)}
+          >
+            {large ? <X size={19} /> : <Expand size={18} />}
+          </button>
+          <button
+            className={`primary-button ${listening ? "listening" : ""}`}
+            disabled={speaking}
+            onClick={listening ? stop : start}
+          >
+            {listening ? <Pause size={16} /> : <Mic size={16} />}
+            {state === "loading"
+              ? "Cancel"
+              : state === "active"
+                ? "Pause captions"
+                : "Start captions"}
+          </button>
+        </div>
+      </header>
+      {settings && (
+        <div className="display-settings">
+          <label htmlFor="caption-size">Caption size</label>
+          <select
+            id="caption-size"
+            value={size}
+            onChange={(e) => setSize(Number(e.target.value))}
+          >
+            <option value={24}>Comfortable</option>
+            <option value={28}>Large</option>
+            <option value={36}>Extra large</option>
+          </select>
+          <button className="text-button" onClick={() => setSettings(false)}>
+            Done
+          </button>
+        </div>
+      )}
+      <div className="conversation-body">
+        <div className="conversation-column">
           <div
             className="transcript"
             ref={scroller}
@@ -336,30 +354,29 @@ export default function Conversation({ active }: { active: boolean }) {
           >
             {!transcript.entries.length && !transcript.interim ? (
               <div className="empty-conversation">
-                <div className="conversation-symbol" aria-hidden="true">
-                  <span>“</span>
-                  <span>”</span>
-                </div>
+                <span className="empty-quote" aria-hidden="true">
+                  “
+                </span>
                 <h2>
-                  A space to understand
+                  Good things begin
                   <br />
-                  each other.
+                  with understanding.
                 </h2>
                 <p>
-                  Every word deserves to be part
-                  <br className="desktop-break" /> of the conversation.
+                  Turn on captions, and give every word
+                  <br />a place in the conversation.
                 </p>
-                <div className="empty-hint">
-                  <Mic size={15} />
-                  <span>Start captions when you’re ready</span>
-                </div>
+                <span className="empty-hint">
+                  <Mic size={14} />
+                  Your microphone starts when you choose.
+                </span>
               </div>
             ) : (
               <>
                 {transcript.sample && (
                   <p className="sample-label">
-                    <Sparkles size={14} /> Sample · illustrative content, not
-                    live audio
+                    <Sparkles size={14} />
+                    Sample conversation · illustrative content
                   </p>
                 )}
                 {transcript.entries.map((entry) => (
@@ -368,7 +385,7 @@ export default function Conversation({ active }: { active: boolean }) {
                     key={entry.id}
                   >
                     <div className="entry-meta">
-                      <span>{entry.speaker === "you" ? "YOU" : "PARTNER"}</span>
+                      <span>{entry.speaker === "you" ? "You" : "Partner"}</span>
                       <time>
                         {new Date(entry.time).toLocaleTimeString([], {
                           hour: "2-digit",
@@ -382,7 +399,7 @@ export default function Conversation({ active }: { active: boolean }) {
                 {transcript.interim && (
                   <article className="transcript-entry interim">
                     <div className="entry-meta">
-                      PARTNER · CAPTION IN PROGRESS
+                      Partner · caption in progress
                     </div>
                     <p>
                       {transcript.interim}
@@ -394,256 +411,209 @@ export default function Conversation({ active }: { active: boolean }) {
             )}
           </div>
           {notice && (
-            <div
+            <p
               className={`notice ${state === "error" ? "error" : ""}`}
               role="status"
             >
               {notice}
-            </div>
-          )}
-          {!speechSupported() && (
-            <div className="notice">
-              Live captions are unavailable here. Try desktop Chrome, or use
-              typed replies.
-            </div>
-          )}
-          <div className="caption-controls">
-            <button
-              className={`primary-button ${listening ? "listening" : ""}`}
-              disabled={speaking}
-              onClick={listening ? stop : start}
-            >
-              {listening ? <Pause size={17} /> : <Mic size={17} />}
-              <span>
-                {state === "loading"
-                  ? "Cancel connection"
-                  : state === "active"
-                    ? "Pause captions"
-                    : "Start captions"}
-              </span>
-            </button>
-            <span className="language">
-              <span className="language-dot" />
-              English (US)
-              <ChevronDown size={13} aria-hidden="true" />
-            </span>
-            <div className="transcript-tools">
-              <button
-                className="icon-button"
-                aria-label="Download transcript"
-                title="Download transcript"
-                disabled={!transcript.entries.length}
-                onClick={download}
-              >
-                <ArrowDownToLine size={18} />
-              </button>
-              <button
-                className="text-button muted"
-                disabled={!transcript.entries.length && !transcript.interim}
-                onClick={() => {
-                  stop();
-                  dispatch({ type: "clear" });
-                }}
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-        </div>
-        <section className="reply-card" aria-labelledby="reply-title">
-          <div className="reply-heading">
-            <h2 id="reply-title">Your side of the conversation</h2>
-            <span>Type it. Share it. Be heard.</span>
-          </div>
-          <label className="sr-only" htmlFor="reply">
-            Type your reply
-          </label>
-          <textarea
-            id="reply"
-            placeholder="Write a reply…"
-            value={reply}
-            maxLength={2000}
-            onChange={(e) => setReply(e.target.value)}
-            onKeyDown={(e) => {
-              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-                e.preventDefault();
-                if (!speaking) send(true);
-              }
-            }}
-          />
-          <div className="reply-actions">
-            <span className="keyboard-hint">⌘ / Ctrl + Enter to speak</span>
-            <div>
-              <button
-                className="text-button"
-                disabled={!reply.trim()}
-                onClick={() => send(false)}
-              >
-                <Send size={14} /> Add text
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!reply.trim() || speaking}
-                onClick={() => send(true)}
-              >
-                <Volume2 size={16} /> Speak reply
-              </button>
-            </div>
-          </div>
-          {speaking && (
-            <div className="speaking-status" role="status">
-              <Volume2 size={15} /> Speaking · captions paused{" "}
-              <button className="text-button" onClick={stopSpeaking}>
-                Stop speaking
-              </button>
-            </div>
-          )}
-        </section>
-        <div className="quick-replies">
-          <div className="quick-heading">
-            <span className="eyebrow">A FEW WORDS, READY WHEN YOU ARE</span>
-            <button
-              className="text-button"
-              onClick={() => setEditing(!editing)}
-            >
-              {editing ? <Check size={14} /> : <Pencil size={13} />}{" "}
-              {editing ? "Done" : "Edit phrases"}
-            </button>
-          </div>
-          <div className="phrase-list">
-            {phrases.map((phrase, index) =>
-              editing ? (
-                <label key={index} className="sr-phrase">
-                  <span className="sr-only">Quick phrase {index + 1}</span>
-                  <input
-                    maxLength={100}
-                    value={phrase}
-                    onChange={(e) =>
-                      setPhrases((old) =>
-                        old.map((p, i) => (i === index ? e.target.value : p)),
-                      )
-                    }
-                  />
-                </label>
-              ) : (
-                <button
-                  key={index}
-                  className="phrase"
-                  onClick={() => {
-                    setReply(phrase);
-                    document.getElementById("reply")?.focus();
-                  }}
-                >
-                  <Plus size={14} />
-                  {phrase || "Edit this phrase"}
-                </button>
-              ),
-            )}
-          </div>
-        </div>
-      </section>
-      <aside className="context-column" aria-label="Conversation tools">
-        <section className="voice-card">
-          <div className="section-title">
-            <span className="small-icon">
-              <Volume2 size={18} />
-            </span>
-            <h2>Beyond the words</h2>
-          </div>
-          <p>
-            A little context for how
-            <br />
-            something is said.
-          </p>
-          <div className="voice-toggle-row">
-            <span>Voice cues</span>
-            <button
-              className="toggle"
-              role="switch"
-              aria-checked={audioState === "active" || audioState === "loading"}
-              aria-label="Enable microphone voice cues"
-              onClick={() =>
-                audioState === "active" || audioState === "loading"
-                  ? audio.current?.stop()
-                  : void audio.current?.start()
-              }
-            >
-              <span />
-            </button>
-          </div>
-          <div className="voice-metric">
-            <div>
-              <span>Microphone level</span>
-              <span>{audioState === "active" ? reading.label : "Off"}</span>
-            </div>
-            <div className="level-bars" aria-hidden="true">
-              {Array.from({ length: 24 }, (_, i) => (
-                <i
-                  key={i}
-                  className={
-                    audioState === "active" && i / 24 < reading.level
-                      ? "filled"
-                      : ""
-                  }
-                  style={{ height: `${10 + Math.sin(i * 0.7) ** 2 * 14}px` }}
-                />
-              ))}
-            </div>
-            <small>Relative level · depends on mic distance</small>
-          </div>
-          <div className="voice-metric pace">
-            <span>Speaking pace</span>
-            <strong>
-              {pace !== null && !transcript.sample ? pace : "—"}
-              <small> est. words/min</small>
-            </strong>
-            <small>
-              {state === "active"
-                ? "Estimated over the last 30 seconds"
-                : "Available while captions are listening"}
-            </small>
-          </div>
-          {audioNotice && (
-            <p className="notice error" role="status">
-              {audioNotice}
             </p>
           )}
-          <div className="card-footnote">
-            <CircleHelp size={14} />
-            <span>Voice cues describe sound, not emotions.</span>
-          </div>
-        </section>
-        <section className="tip-card">
-          <span className="eyebrow">SMALL THINGS. BETTER CONNECTION.</span>
-          <div className="tip-illustration" aria-hidden="true">
-            <span className="face one">◡</span>
-            <span className="tip-connector">···</span>
-            <span className="face two">◡</span>
-          </div>
-          <h3>Face each other.</h3>
-          <p>
-            Good lighting and a clear view of your face can make a conversation
-            easier to follow.
-          </p>
-        </section>
-        <button className="sample-button" onClick={sample}>
-          <span className="sample-icon">
-            <Play size={15} />
-          </span>
-          <span>
-            <strong>Take a quick look</strong>
-            <small>Try a sample conversation</small>
-          </span>
-          <ArrowUpRight size={17} />
-        </button>
-        <p className="privacy-note">
+          {!speechSupported() && (
+            <p className="notice">
+              Live captions need desktop Chrome. You can still type and share
+              replies.
+            </p>
+          )}
+          <section className="reply-dock" aria-labelledby="reply-title">
+            <div className="dock-heading">
+              <h2 id="reply-title">Your turn.</h2>
+              <span>Type a reply. We’ll help you say it.</span>
+            </div>
+            <label className="sr-only" htmlFor="reply">
+              Type your reply
+            </label>
+            <textarea
+              id="reply"
+              placeholder="What would you like to say?"
+              value={reply}
+              maxLength={2000}
+              onChange={(e) => setReply(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  if (!speaking) send(true);
+                }
+              }}
+            />
+            <div className="reply-actions">
+              <span className="keyboard-hint">⌘ / Ctrl + Enter to speak</span>
+              <div>
+                <button
+                  className="text-button"
+                  disabled={!reply.trim()}
+                  onClick={() => send(false)}
+                >
+                  <Send size={14} />
+                  Add text
+                </button>
+                <button
+                  className="primary-button reply-speak"
+                  disabled={!reply.trim() || speaking}
+                  onClick={() => send(true)}
+                >
+                  <Volume2 size={16} />
+                  Speak reply
+                </button>
+              </div>
+            </div>
+            {speaking && (
+              <p className="speaking-status" role="status">
+                <Volume2 size={15} />
+                Speaking · captions paused
+                <button className="text-button" onClick={stopSpeaking}>
+                  Stop speaking
+                </button>
+              </p>
+            )}
+          </section>
+        </div>
+        <aside className="conversation-rail" aria-label="Conversation tools">
+          <section className="quick-phrases">
+            <div className="rail-heading">
+              <h2>A few words, ready.</h2>
+              <button
+                className="icon-button"
+                aria-label={
+                  editing ? "Finish editing phrases" : "Edit quick phrases"
+                }
+                onClick={() => setEditing(!editing)}
+              >
+                {editing ? <Check size={15} /> : <Pencil size={14} />}
+              </button>
+            </div>
+            <p>Tap a phrase to start a reply.</p>
+            <div className="phrase-list">
+              {phrases.map((phrase, index) =>
+                editing ? (
+                  <label key={index}>
+                    <span className="sr-only">Quick phrase {index + 1}</span>
+                    <input
+                      maxLength={100}
+                      value={phrase}
+                      onChange={(e) =>
+                        setPhrases((old) =>
+                          old.map((p, i) => (i === index ? e.target.value : p)),
+                        )
+                      }
+                    />
+                  </label>
+                ) : (
+                  <button
+                    key={index}
+                    className="phrase"
+                    onClick={() => {
+                      setReply(phrase);
+                      document.getElementById("reply")?.focus();
+                    }}
+                  >
+                    <Plus size={14} />
+                    {phrase || "Edit this phrase"}
+                  </button>
+                ),
+              )}
+            </div>
+          </section>
+          <section className="voice-section">
+            <div className="rail-heading">
+              <h2>
+                <Volume2 size={16} />
+                Beyond the words
+              </h2>
+              <button
+                className="toggle"
+                role="switch"
+                aria-label="Enable microphone voice cues"
+                aria-checked={
+                  audioState === "active" || audioState === "loading"
+                }
+                onClick={() =>
+                  audioState === "active" || audioState === "loading"
+                    ? audio.current?.stop()
+                    : void audio.current?.start()
+                }
+              >
+                <span />
+              </button>
+            </div>
+            <p>Optional loudness and pace cues.</p>
+            <div className="voice-metric">
+              <div>
+                <span>Microphone level</span>
+                <strong>
+                  {audioState === "active" ? reading.label : "Off"}
+                </strong>
+              </div>
+              <div className="level-bars" aria-hidden="true">
+                {Array.from({ length: 28 }, (_, i) => (
+                  <i
+                    key={i}
+                    className={
+                      audioState === "active" && i / 28 < reading.level
+                        ? "filled"
+                        : ""
+                    }
+                    style={{ height: `${8 + Math.sin(i * 0.7) ** 2 * 20}px` }}
+                  />
+                ))}
+              </div>
+              <small>Relative to your mic and its distance.</small>
+            </div>
+            <div className="pace-metric">
+              <span>Speaking pace</span>
+              <strong>
+                {pace !== null && !transcript.sample ? pace : "—"}
+                <small> est. words/min</small>
+              </strong>
+              <small>
+                {state === "active"
+                  ? "Estimated over the last 30 seconds."
+                  : "Available with live captions."}
+              </small>
+            </div>
+            {audioNotice && (
+              <p className="notice error" role="status">
+                {audioNotice}
+              </p>
+            )}
+            <p className="cue-note">
+              <CircleHelp size={13} />
+              Sound cues, not emotion labels.
+            </p>
+          </section>
+          <button className="sample-link" onClick={sample}>
+            <Play size={14} />
+            <span>Try a sample conversation</span>
+            <span aria-hidden="true">↗</span>
+          </button>
+        </aside>
+      </div>
+      <footer className="workspace-bottom">
+        <span>
           <Check size={13} />
-          <span>
-            Your transcript stays in this tab. Browser speech recognition may
-            send audio to its provider. No audio is recorded by Common.
-          </span>
-        </p>
-      </aside>
-    </div>
+          Your transcript stays in this tab. Browser speech may use an online
+          provider.
+        </span>
+        <button
+          className="text-button"
+          disabled={!transcript.entries.length && !transcript.interim}
+          onClick={() => {
+            stop();
+            dispatch({ type: "clear" });
+          }}
+        >
+          Clear conversation
+        </button>
+      </footer>
+    </section>
   );
 }
