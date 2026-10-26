@@ -1,10 +1,17 @@
 export const letters = [
   "A",
   "B",
+  "C",
   "D",
   "F",
+  "H",
   "I",
   "L",
+  "M",
+  "N",
+  "O",
+  "S",
+  "T",
   "U",
   "V",
   "W",
@@ -34,6 +41,55 @@ export const lessons: Record<
       "Extend all four fingers upward and hold them together. Fold your thumb across your palm.",
     tip: "Face your palm toward the camera and keep the fingers close together.",
     fingers: [true, true, true, true],
+  },
+  C: {
+    title: "An open curve.",
+    instruction:
+      "Curve all four fingers and your thumb into the shape of a C. Keep an open gap between the fingertips and thumb.",
+    tip: "This curved handshape needs a short personal calibration.",
+    fingers: [false, false, false, false],
+  },
+  H: {
+    title: "Two fingers, pointing sideways.",
+    instruction:
+      "Extend your index and middle fingers together, pointing sideways. Curl your other fingers and rest your thumb across them.",
+    tip: "H points sideways. U uses a similar handshape pointing upward.",
+    fingers: [true, true, false, false],
+  },
+  M: {
+    title: "Thumb under three fingers.",
+    instruction:
+      "Make a fist with your thumb tucked under your index, middle, and ring fingers. Its tip sits between your ring and little fingers.",
+    tip: "The hidden thumb makes M hard to distinguish without your personal examples.",
+    fingers: [false, false, false, false],
+  },
+  N: {
+    title: "Thumb under two fingers.",
+    instruction:
+      "Make a fist with your thumb tucked under your index and middle fingers. Its tip sits between your middle and ring fingers.",
+    tip: "Keep the thumb tip visible between the middle and ring fingers when possible.",
+    fingers: [false, false, false, false],
+  },
+  O: {
+    title: "Close the circle.",
+    instruction:
+      "Curve your fingers and bring their tips to your thumb, forming a rounded O. Keep the fingertips gently together.",
+    tip: "For O, the fingertips meet the thumb. For C, leave the curve open.",
+    fingers: [false, false, false, false],
+  },
+  S: {
+    title: "A fist, thumb across the front.",
+    instruction:
+      "Curl all four fingers into a fist. Place your thumb across the front of your fingers.",
+    tip: "For S the thumb crosses the front; for A it rests beside the fist.",
+    fingers: [false, false, false, false],
+  },
+  T: {
+    title: "Thumb between two fingers.",
+    instruction:
+      "Make a fist with your thumb tucked under the index finger. Let its tip show between the index and middle fingers.",
+    tip: "Compare the thumb placement in T, N, and M before recording your examples.",
+    fingers: [false, false, false, false],
   },
   D: {
     title: "One finger, pointing up.",
@@ -109,26 +165,56 @@ function angle(a: Point, b: Point, c: Point) {
         Math.PI
     : 0;
 }
+export const personalLetters: readonly Letter[] = [
+  "C",
+  "M",
+  "N",
+  "O",
+  "S",
+  "T",
+];
+export function handQuality(points: Point[]): string | null {
+  if (
+    points.length !== 21 ||
+    points.some((p) => ![p.x, p.y, p.z].every(Number.isFinite))
+  )
+    return "Show one whole hand to the camera.";
+  if (
+    points.some((p) => p.x < 0.025 || p.x > 0.975 || p.y < 0.025 || p.y > 0.975)
+  )
+    return "Move your whole hand into the frame.";
+  const scale = distance(points[0], points[9]);
+  if (scale < 0.07) return "Bring your hand a little closer.";
+  if (distance(points[5], points[17]) / scale < 0.3)
+    return "Turn your hand so its shape is clearly visible.";
+  return null;
+}
 export type Match = { match: boolean; message: string };
 export function matchHandshape(
   points: Point[],
   letter: Letter,
   world?: Point[],
 ): Match {
-  if (
-    points.length !== 21 ||
-    points.some((p) => ![p.x, p.y, p.z].every(Number.isFinite))
-  )
-    return { match: false, message: "Show one whole hand to the camera." };
-  if (
-    points.some((p) => p.x < 0.035 || p.x > 0.965 || p.y < 0.035 || p.y > 0.965)
-  )
-    return { match: false, message: "Move your whole hand into the frame." };
-  const imageScale = distance(points[0], points[9]);
-  if (imageScale < 0.07)
-    return { match: false, message: "Bring your hand a little closer." };
-  if (distance(points[5], points[17]) / imageScale < 0.3)
-    return { match: false, message: "Turn your palm toward the camera." };
+  const problem = handQuality(points);
+  if (problem) return { match: false, message: problem };
+  if (personalLetters.includes(letter))
+    return {
+      match: false,
+      message: `Set up personal examples for ${letter} to begin matching.`,
+    };
+  const horizontal =
+    Math.abs(points[8].x - points[5].x) /
+    Math.max(
+      0.001,
+      Math.hypot(points[8].x - points[5].x, points[8].y - points[5].y),
+    );
+  if (letter === "H" && horizontal < 0.8)
+    return {
+      match: false,
+      message: "Point your index and middle fingers sideways.",
+    };
+  if (letter === "U" && horizontal > 0.6)
+    return { match: false, message: "Point your two fingers upward for U." };
   // Use the model's metric world landmarks for aspect-ratio-independent angles.
   // Image landmarks remain the source for clipping and camera-distance checks.
   if (
@@ -160,10 +246,20 @@ export function matchHandshape(
   if ((letter === "L" || letter === "Y") && !thumbOpen)
     return { match: false, message: "Extend your thumb out to the side." };
   if (
-    ["B", "I", "U", "V", "W"].includes(letter) &&
+    ["B", "H", "I", "U", "V", "W"].includes(letter) &&
     distance(points[4], points[9]) / scale > 0.85
   )
     return { match: false, message: "Fold your thumb toward your palm." };
+  const thumbBeyondIndex =
+    (points[4].x - points[5].x) * (points[5].x - points[17].x) +
+    (points[4].y - points[5].y) * (points[5].y - points[17].y) +
+    (points[4].z - points[5].z) * (points[5].z - points[17].z);
+  if (letter === "A" && thumbBeyondIndex < -0.02 * scale * scale)
+    return {
+      match: false,
+      message:
+        "Rest your thumb outside the index finger, not between the fingers.",
+    };
   if (
     letter === "A" &&
     (distance(points[4], points[5]) / scale > 0.72 ||
@@ -179,7 +275,7 @@ export function matchHandshape(
   const spread = distance(points[8], points[12]) / scale;
   if (letter === "V" && spread < 0.5)
     return { match: false, message: "Spread your index and middle fingers." };
-  if (letter === "U" && spread > 0.4)
+  if ((letter === "U" || letter === "H") && spread > 0.4)
     return {
       match: false,
       message: "Bring your index and middle fingertips together.",

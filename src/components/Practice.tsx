@@ -5,485 +5,705 @@ import {
   CameraOff,
   Check,
   CheckCircle2,
+  Copy,
+  Delete,
   ExternalLink,
   FlipHorizontal2,
   Hand,
   Lightbulb,
   RotateCcw,
+  ScanLine,
   ShieldCheck,
+  Space,
+  Volume2,
 } from "lucide-react";
-import type { HandLandmarker } from "@mediapipe/tasks-vision";
 import {
+  handQuality,
   letters,
   lessons,
   matchHandshape,
+  personalLetters,
   StableHold,
   type Letter,
+  type Point,
 } from "../lib/handshape";
-import type { DeviceState } from "../lib/speech";
+import {
+  demoLetters,
+  poseDistance,
+  poseVector,
+  readProfiles,
+  resolveLetter,
+  sampleCount,
+  type Profiles,
+} from "../lib/calibration";
+import {
+  demoPhrase,
+  LetterCapture,
+  phrasePrefix,
+  spellingOf,
+  wordDrills,
+} from "../lib/fingerspelling";
 import { readStored, saveStored } from "../lib/storage";
+import { useHandCamera } from "../hooks/useHandCamera";
 import HandDiagram from "./HandDiagram";
-
 export default function Practice() {
   const [letter, setLetter] = useState<Letter>("A");
+  const [drill, setDrill] = useState<"letters" | "words">("letters");
+  const [word, setWord] = useState<string>(demoPhrase),
+    [wordIndex, setWordIndex] = useState(0),
+    [wordDone, setWordDone] = useState(false);
   const [completed, setCompleted] = useState<Letter[]>(() => {
-    const value = readStored<unknown>("common-completed", []);
-    return Array.isArray(value) ? letters.filter((l) => value.includes(l)) : [];
+    const v = readStored<unknown>("common-completed", []);
+    return Array.isArray(v) ? letters.filter((l) => v.includes(l)) : [];
   });
-  const [state, setState] = useState<DeviceState>("idle");
-  const [message, setMessage] = useState("");
-  const [feedback, setFeedback] = useState(
-    "Show one hand, palm facing the camera.",
+  const [profiles, setProfiles] = useState<Profiles>(() =>
+    readProfiles(readStored("common-poses-v1", {})),
   );
-  const [progress, setProgress] = useState(0);
-  const [success, setSuccess] = useState(false);
-  const [mirrored, setMirrored] = useState(true);
-  const video = useRef<HTMLVideoElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const stream = useRef<MediaStream | null>(null);
-  const model = useRef<HandLandmarker | null>(null);
-  const frame = useRef(0);
-  const generation = useRef(0);
-  const target = useRef(letter);
-  const hold = useRef(new StableHold());
-  const matched = useRef(false);
-  const connections = [
-    [0, 1],
-    [1, 2],
-    [2, 3],
-    [3, 4],
-    [0, 5],
-    [5, 6],
-    [6, 7],
-    [7, 8],
-    [5, 9],
-    [9, 10],
-    [10, 11],
-    [11, 12],
-    [9, 13],
-    [13, 14],
-    [14, 15],
-    [15, 16],
-    [13, 17],
-    [0, 17],
-    [17, 18],
-    [18, 19],
-    [19, 20],
-  ];
-
-  function stop() {
-    generation.current++;
-    cancelAnimationFrame(frame.current);
-    stream.current?.getTracks().forEach((t) => t.stop());
-    stream.current = null;
-    model.current?.close();
-    model.current = null;
-    if (video.current) video.current.srcObject = null;
-    if (canvas.current)
-      canvas.current
-        .getContext("2d")
-        ?.clearRect(0, 0, canvas.current.width, canvas.current.height);
-    setState("idle");
-    setProgress(0);
-    hold.current.reset();
-  }
-  useEffect(
-    () => () => {
-      generation.current++;
-      cancelAnimationFrame(frame.current);
-      stream.current?.getTracks().forEach((t) => t.stop());
-      model.current?.close();
-    },
-    [],
+  const [feedback, setFeedback] = useState("Start your camera to begin."),
+    [progress, setProgress] = useState(0),
+    [success, setSuccess] = useState(false);
+  const [mirrored, setMirrored] = useState(true),
+    [detected, setDetected] = useState<Letter | null>(null),
+    [text, setText] = useState(""),
+    [captureEnabled, setCaptureEnabled] = useState(true),
+    [notice, setNotice] = useState("");
+  const [recording, setRecording] = useState(false),
+    [recordProgress, setRecordProgress] = useState(0),
+    [setupIndex, setSetupIndex] = useState<number | null>(null);
+  const capture = useRef(new LetterCapture()),
+    hold = useRef(new StableHold()),
+    matched = useRef(false);
+  const recordingRef = useRef<{ letter: Letter; samples: number[][] } | null>(
+    null,
   );
+  const sequence = spellingOf(word);
+  const target =
+    drill === "words"
+      ? sequence[Math.min(wordIndex, sequence.length - 1)]
+      : letter;
   useEffect(() => {
     saveStored("common-completed", completed);
   }, [completed]);
-  function select(value: Letter) {
-    target.current = value;
-    setLetter(value);
-    setSuccess(false);
+  useEffect(() => {
+    saveStored("common-poses-v1", profiles);
+  }, [profiles]);
+  useEffect(
+    () => () => {
+      window.speechSynthesis?.cancel();
+    },
+    [],
+  );
+  function resetTracking() {
+    capture.current.reset();
+    hold.current.reset();
     matched.current = false;
+    setSuccess(false);
     setProgress(0);
-    hold.current.reset();
-    setFeedback("Show one hand, palm facing the camera.");
+    setDetected(null);
+    recordingRef.current = null;
+    setRecording(false);
+    setRecordProgress(0);
   }
-  async function start() {
-    stop();
-    const run = ++generation.current;
-    setState("loading");
-    setMessage("");
-    setSuccess(false);
-    matched.current = false;
-    hold.current.reset();
-    try {
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error(
-          "Camera access requires HTTPS or localhost and a supported browser.",
+  function chooseLetter(next: Letter) {
+    resetTracking();
+    setLetter(next);
+    setDrill("letters");
+    setSetupIndex(null);
+    setFeedback("Match the reference with either hand.");
+  }
+  function chooseWord(next: string) {
+    resetTracking();
+    setWord(next);
+    setDrill("words");
+    setSetupIndex(null);
+    setWordIndex(0);
+    setWordDone(false);
+    setText("");
+    setFeedback("Fingerspell each highlighted letter.");
+  }
+  function startSetup() {
+    resetTracking();
+    setSetupIndex(0);
+    setLetter(demoLetters[0]);
+    setDrill("letters");
+    setFeedback("Make the reference handshape, then record your example.");
+  }
+  function record() {
+    recordingRef.current = { letter: target, samples: [] };
+    setRecording(true);
+    setRecordProgress(0);
+    capture.current.reset();
+    setFeedback(`Hold ${target} steady while we collect your example.`);
+  }
+  function onFrame(
+    image: Point[] | null,
+    world: Point[] | undefined,
+    now: number,
+    count: number,
+  ) {
+    const quality =
+      count > 1
+        ? "Keep just one hand in the frame."
+        : image
+          ? handQuality(image)
+          : "No hand detected. Raise one hand into view.";
+    if (recordingRef.current) {
+      if (quality || !image) {
+        recordingRef.current.samples = [];
+        setRecordProgress(0);
+        setFeedback(quality || "Show your whole hand.");
+        return;
+      }
+      const vector = poseVector(image, world);
+      if (!vector) return;
+      const job = recordingRef.current,
+        last = job.samples[job.samples.length - 1];
+      if (last && poseDistance(vector, last) > 0.12) {
+        job.samples = [];
+        setFeedback("Hold the same shape steady; collecting again.");
+      }
+      job.samples.push(vector);
+      setRecordProgress(job.samples.length / sampleCount);
+      if (job.samples.length >= sampleCount) {
+        setProfiles((old) => ({ ...old, [job.letter]: job.samples }));
+        recordingRef.current = null;
+        setRecording(false);
+        setRecordProgress(0);
+        resetTracking();
+        setNotice(
+          `${job.letter} saved on this device. These are labeled examples, not an accuracy score.`,
         );
-      const media = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 480 },
-        audio: false,
-      });
-      if (run !== generation.current) {
-        media.getTracks().forEach((t) => t.stop());
-        return;
+        if (setupIndex !== null && setupIndex < demoLetters.length - 1) {
+          const next = setupIndex + 1;
+          setSetupIndex(next);
+          setLetter(demoLetters[next]);
+          setFeedback(`Next: make ${demoLetters[next]}, then record.`);
+        } else if (setupIndex !== null) {
+          setSetupIndex(null);
+          chooseWord(demoPhrase);
+          setNotice(
+            "Demo examples saved. Fingerspell “Hi, this is Common” one letter at a time.",
+          );
+        } else setFeedback("Example saved. Try matching the handshape again.");
       }
-      stream.current = media;
-      media.getVideoTracks()[0].onended = () => {
-        if (run === generation.current) {
-          stop();
-          setMessage("The camera disconnected. Reconnect it and try again.");
-          setState("error");
-        }
-      };
-      video.current!.srcObject = media;
-      await video.current!.play();
-      if (canvas.current && video.current) {
-        canvas.current.width = video.current.videoWidth;
-        canvas.current.height = video.current.videoHeight;
-      }
-      const { FilesetResolver, HandLandmarker } =
-        await import("@mediapipe/tasks-vision");
-      const files = await FilesetResolver.forVisionTasks(
-        `${import.meta.env.BASE_URL}wasm`,
-      );
-      if (run !== generation.current) return;
-      const detector = await HandLandmarker.createFromOptions(files, {
-        baseOptions: {
-          modelAssetPath: `${import.meta.env.BASE_URL}models/hand_landmarker.task`,
-          delegate: "CPU",
-        },
-        runningMode: "VIDEO",
-        numHands: 2,
-        minHandDetectionConfidence: 0.6,
-        minHandPresenceConfidence: 0.6,
-        minTrackingConfidence: 0.6,
-      });
-      if (run !== generation.current) {
-        detector.close();
-        return;
-      }
-      model.current = detector;
-      setState("active");
-      let last = 0;
-      let lastVideoTime = -1;
-      const detect = (now: number) => {
-        if (run !== generation.current) return;
-        try {
-          const element = video.current;
-          if (
-            element &&
-            element.readyState >= 2 &&
-            now - last > 100 &&
-            element.currentTime !== lastVideoTime
-          ) {
-            last = now;
-            lastVideoTime = element.currentTime;
-            const result = detector.detectForVideo(element, now);
-            const ctx = canvas.current?.getContext("2d");
-            const width = canvas.current?.width || 640;
-            const height = canvas.current?.height || 480;
-            ctx?.clearRect(0, 0, width, height);
-            const points = result.landmarks[0];
-            if (ctx && points) {
-              ctx.strokeStyle = "#b5e2c1";
-              ctx.lineWidth = 2;
-              connections.forEach(([a, b]) => {
-                ctx.beginPath();
-                ctx.moveTo(points[a].x * width, points[a].y * height);
-                ctx.lineTo(points[b].x * width, points[b].y * height);
-                ctx.stroke();
-              });
-              ctx.fillStyle = "#fff9eb";
-              points.forEach((p) => {
-                ctx.beginPath();
-                ctx.arc(p.x * width, p.y * height, 3.5, 0, 2 * Math.PI);
-                ctx.fill();
-              });
-            }
-            const match =
-              result.landmarks.length > 1
-                ? { match: false, message: "Keep just one hand in the frame." }
-                : points
-                  ? matchHandshape(
-                      points,
-                      target.current,
-                      result.worldLandmarks[0],
-                    )
-                  : {
-                      match: false,
-                      message: "No hand detected. Raise one hand into view.",
-                    };
-            if (!matched.current) {
-              const value = hold.current.update(match.match, now);
-              setProgress(value);
-              setFeedback(match.message);
-              if (value >= 1) {
-                matched.current = true;
-                setSuccess(true);
-                setFeedback("Handshape held. Nicely done!");
-                setCompleted((old) =>
-                  old.includes(target.current) ? old : [...old, target.current],
-                );
-              }
-            }
+      return;
+    }
+    const found =
+      !quality && image ? resolveLetter(image, world, profiles) : null;
+    setDetected(found);
+    const result = capture.current.update(found, now);
+    if (drill === "words") {
+      if (!wordDone) {
+        setProgress(found === target ? result.progress : 0);
+        setFeedback(
+          quality ||
+            (!found
+              ? "No confident letter yet. Adjust your hand or record a personal example."
+              : found !== target
+                ? `Read ${found}. Next in the phrase: ${target}.`
+                : result.repeat
+                  ? "Lower your hand briefly before repeating this letter."
+                  : `Reading ${found}. Hold steady…`),
+        );
+        if (result.letter === target) {
+          const next = wordIndex + 1;
+          setWordIndex(next);
+          if (captureEnabled) setText(phrasePrefix(word, next));
+          if (next === sequence.length) {
+            setWordDone(true);
+            setSuccess(true);
+            setFeedback("Every letter matched. Your phrase is complete.");
           }
-          frame.current = requestAnimationFrame(detect);
-        } catch {
-          stop();
-          setState("error");
-          setMessage(
-            "Hand tracking was interrupted. Restart the camera to try again.",
+        }
+      }
+    } else {
+      if (result.letter && captureEnabled)
+        setText((old) => (old + result.letter).slice(0, 2000));
+      const match = quality
+        ? { match: false, message: quality }
+        : image
+          ? profiles[target]
+            ? {
+                match: found === target,
+                message:
+                  found === target
+                    ? "Your personal example matches. Hold steady…"
+                    : `Make ${target}, or record a clearer personal example.`,
+              }
+            : matchHandshape(image, target, world)
+          : { match: false, message: "Show one hand." };
+      if (!matched.current) {
+        const value = hold.current.update(match.match, now);
+        setProgress(value);
+        setFeedback(
+          result.repeat && found === target
+            ? "Letter captured. Lower your hand briefly to repeat."
+            : match.message,
+        );
+        if (value >= 1) {
+          matched.current = true;
+          setSuccess(true);
+          setCompleted((old) =>
+            old.includes(target) ? old : [...old, target],
           );
         }
-      };
-      frame.current = requestAnimationFrame(detect);
-    } catch (error) {
-      if (run !== generation.current) return;
-      stop();
-      setState("error");
-      const name = error instanceof Error ? error.name : "";
-      setMessage(
-        name === "NotAllowedError"
-          ? "Camera permission was blocked. Allow camera access in your browser’s site settings, then try again."
-          : name === "NotFoundError"
-            ? "No camera was found. Connect a webcam and try again."
-            : error instanceof Error && error.message.includes("HTTPS")
-              ? error.message
-              : "Could not load the camera or hand tracker. Check your camera and reload, then try again.",
+      }
+    }
+  }
+  const camera = useHandCamera(onFrame);
+  const active = camera.state === "active",
+    loading = camera.state === "loading";
+  const setupNeeded = personalLetters.filter((l) => !profiles[l]);
+  const next = letters[(letters.indexOf(target) + 1) % letters.length];
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice("Text copied.");
+    } catch {
+      setNotice(
+        "Copy is unavailable here. Select the text and copy it manually.",
       );
     }
   }
-  const next = letters[(letters.indexOf(letter) + 1) % letters.length];
+  function speak() {
+    if (!window.speechSynthesis) {
+      setNotice("Speech playback is unavailable.");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-US";
+    utterance.onerror = () =>
+      setNotice(
+        "Speech playback could not start. Your text is still available.",
+      );
+    window.speechSynthesis.speak(utterance);
+  }
   return (
-    <div className="practice-layout">
-      <section className="practice-main">
-        <div className="lesson-selector" aria-label="Choose an ASL letter">
-          {letters.map((l, i) => (
-            <button
-              key={l}
-              className={`letter-tab ${letter === l ? "selected" : ""}`}
-              aria-pressed={letter === l}
-              onClick={() => select(l)}
-            >
-              <span className="lesson-number">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <strong>{l}</strong>
-              {completed.includes(l) ? (
-                <CheckCircle2 size={16} />
-              ) : (
-                <span className="lesson-dot" />
-              )}
-            </button>
-          ))}
+    <section className="sign-studio unified-workspace" aria-label="Sign studio">
+      <header className="studio-toolbar">
+        <div className="segmented" aria-label="Practice mode">
+          <button
+            aria-pressed={drill === "letters"}
+            onClick={() => chooseLetter(letter)}
+          >
+            Letter practice
+          </button>
+          <button
+            aria-pressed={drill === "words"}
+            onClick={() => chooseWord(word)}
+          >
+            Words & demo
+          </button>
         </div>
-        <section className="camera-card">
-          <div className="card-toolbar">
-            <span className="eyebrow">
-              <span
-                className={`status-dot ${state === "active" ? "live" : ""}`}
-              />
-              {state === "active"
-                ? "CAMERA IS ON"
-                : state === "loading"
-                  ? "PREPARING CAMERA"
-                  : "YOUR PRACTICE SPACE"}
-            </span>
-            <button
-              className="text-button"
-              onClick={() => setMirrored(!mirrored)}
-              aria-pressed={mirrored}
-            >
-              <FlipHorizontal2 size={15} />
-              {mirrored ? "Mirrored" : "Unmirrored"}
-            </button>
+        <span className="studio-private">
+          <ShieldCheck size={15} />
+          Camera processing stays on this device
+        </span>
+      </header>
+      <div className="lesson-ribbon">
+        {drill === "letters" ? (
+          <div className="alphabet-grid" aria-label="Choose an ASL letter">
+            {letters.map((l) => (
+              <button
+                key={l}
+                aria-pressed={target === l}
+                className={target === l ? "selected" : ""}
+                onClick={() => chooseLetter(l)}
+              >
+                <span>{l}</span>
+                {completed.includes(l) && <Check size={12} />}
+                <small>
+                  {profiles[l]
+                    ? "Personal"
+                    : personalLetters.includes(l)
+                      ? "Set up"
+                      : "Ready"}
+                </small>
+              </button>
+            ))}
           </div>
-          <div className={`camera-stage ${state === "active" ? "active" : ""}`}>
-            <div className={`camera-media ${mirrored ? "mirrored" : ""}`}>
+        ) : (
+          <>
+            <div className="word-choices" aria-label="Word drills">
+              {wordDrills.map((w) => (
+                <button
+                  key={w}
+                  className={word === w ? "selected" : ""}
+                  aria-pressed={word === w}
+                  onClick={() => chooseWord(w)}
+                >
+                  {w === demoPhrase ? "Demo: Hi, this is Common" : w}
+                </button>
+              ))}
+            </div>
+            <div className="word-sequence" aria-label={`Fingerspell ${word}`}>
+              {sequence.map((l, i) => (
+                <span
+                  key={i}
+                  className={
+                    i < wordIndex ? "done" : i === wordIndex ? "current" : ""
+                  }
+                >
+                  {l}
+                </span>
+              ))}
+              <small>
+                {wordDone
+                  ? "Complete"
+                  : `${wordIndex} / ${sequence.length} letters`}
+              </small>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="studio-body">
+        <div className="camera-column">
+          <div className="camera-view">
+            <div
+              className={`camera-media ${mirrored ? "mirrored" : ""} ${active ? "visible" : ""}`}
+            >
               <video
-                ref={video}
+                ref={camera.video}
                 autoPlay
                 muted
                 playsInline
                 aria-label="Live camera preview"
               />
               <canvas
-                ref={canvas}
+                ref={camera.canvas}
                 width={640}
                 height={480}
                 aria-hidden="true"
               />
             </div>
-            {state !== "active" && (
-              <div className="camera-placeholder">
-                <span className="camera-orbit" aria-hidden="true">
-                  <Hand size={56} strokeWidth={1} />
+            {!active && (
+              <div className="camera-idle">
+                <span className="camera-outline">
+                  <Hand size={64} strokeWidth={1} />
                 </span>
                 <h2>
-                  {state === "loading"
-                    ? "Finding your hand…"
-                    : "A little practice. A new connection."}
+                  {loading
+                    ? "Preparing your camera…"
+                    : "Your hands have something to say."}
                 </h2>
                 <p>
-                  {state === "loading"
-                    ? "Allow camera access while the hand tracker loads."
-                    : "Follow the reference, then turn on your camera.\nEither hand is welcome here."}
+                  {loading
+                    ? "Allow camera access to start tracking."
+                    : "One camera. A place to learn, and a space to be understood."}
                 </p>
+                <button
+                  className="primary-button"
+                  onClick={loading ? camera.stop : () => void camera.start()}
+                >
+                  {loading ? <CameraOff size={16} /> : <Camera size={16} />}
+                  {loading ? "Cancel loading" : "Turn on camera"}
+                </button>
               </div>
             )}
-            <div className="camera-corner top-left" />
-            <div className="camera-corner bottom-right" />
-            {state === "active" && (
-              <span className="camera-label">
-                <span className="status-dot live" />
-                LIVE · PROCESSED ON YOUR DEVICE
+            <div className="view-topline">
+              <span className="view-status">
+                <span className={`status-dot ${active ? "live" : ""}`} />
+                {active ? "CAMERA ON" : "CAMERA OFF"}
               </span>
+              <button
+                className="view-mirror"
+                aria-pressed={mirrored}
+                onClick={() => setMirrored(!mirrored)}
+              >
+                <FlipHorizontal2 size={15} />
+                {mirrored ? "Mirrored" : "Unmirrored"}
+              </button>
+            </div>
+            {active && (
+              <div className="live-letter">
+                <span>READING</span>
+                <strong>{detected || "—"}</strong>
+                <small>
+                  {detected
+                    ? "Hold steady to capture"
+                    : "Waiting for a clear handshape"}
+                </small>
+              </div>
             )}
           </div>
           <div
-            className={`practice-feedback ${success ? "success" : ""}`}
+            className={`detection-status ${success ? "success" : ""}`}
             role="status"
           >
-            {success ? <CheckCircle2 size={20} /> : <Hand size={20} />}
+            {success ? <CheckCircle2 size={21} /> : <ScanLine size={21} />}
             <div>
               <strong>
-                {success
-                  ? "One more connection made."
-                  : state === "active"
-                    ? feedback
-                    : "Ready when you are."}
+                {recording
+                  ? `Recording ${target}…`
+                  : success
+                    ? drill === "words"
+                      ? "Phrase complete."
+                      : `${target} handshape matched.`
+                    : feedback}
               </strong>
               <span>
-                {success
-                  ? `You held the ${letter} handshape for one second.`
-                  : state === "active"
-                    ? "Hold the matching shape for one second."
-                    : "Your camera only starts when you choose."}
+                {recording
+                  ? "Keep the shape still for 16 clear frames."
+                  : drill === "words"
+                    ? "Repeated letters need a brief hand-lowering pause."
+                    : "Hold a match for one second. Either hand is supported."}
               </span>
             </div>
-            {success && (
-              <button className="text-button" onClick={() => select(next)}>
-                Next letter <ArrowRight size={16} />
+            {success && drill === "letters" && (
+              <button
+                className="text-button"
+                onClick={() => chooseLetter(next)}
+              >
+                Next <ArrowRight size={15} />
               </button>
             )}
           </div>
           <div
             className="hold-track"
             role="progressbar"
-            aria-label="One-second stable handshape hold"
+            aria-label={
+              recording ? "Personal example recording" : "Stable handshape hold"
+            }
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={Math.round(progress * 100)}
+            aria-valuenow={Math.round(
+              (recording ? recordProgress : progress) * 100,
+            )}
           >
-            <span style={{ width: `${progress * 100}%` }} />
+            <span
+              style={{
+                width: `${(recording ? recordProgress : progress) * 100}%`,
+              }}
+            />
           </div>
-          {message && (
-            <div className="notice error" role="alert">
-              {message}
-            </div>
+          {camera.message && (
+            <p className="notice error" role="alert">
+              {camera.message}
+            </p>
           )}
-          <div className="caption-controls">
-            <button
-              className="primary-button"
-              onClick={
-                state === "active" || state === "loading"
-                  ? stop
-                  : () => void start()
-              }
-            >
-              {state === "active" || state === "loading" ? (
-                <CameraOff size={17} />
-              ) : (
-                <Camera size={17} />
-              )}
-              {state === "active"
-                ? "Stop camera"
-                : state === "loading"
-                  ? "Cancel loading"
-                  : "Start camera"}
-            </button>
-            <span className="camera-local">
-              <ShieldCheck size={15} />
-              Video stays on your device
+          <div className="camera-bottom">
+            <span>
+              <ShieldCheck size={14} />
+              No video is saved or uploaded
             </span>
-            {success && (
+            {(active || loading) && (
               <button
-                className="icon-button"
-                aria-label="Practice this letter again"
-                onClick={() => select(letter)}
+                className="text-button"
+                onClick={() => {
+                  camera.stop();
+                  resetTracking();
+                }}
               >
-                <RotateCcw size={17} />
+                Stop camera <CameraOff size={15} />
               </button>
             )}
           </div>
-        </section>
-        <p className="practice-disclaimer">
-          A starting point, not a fluency test. This tool checks a few handshape
-          features. It doesn’t translate ASL or assess signing proficiency.
-        </p>
-      </section>
-      <aside className="lesson-column">
-        <section className="reference-card">
-          <div className="reference-heading">
-            <span className="eyebrow">MEET THE LETTER</span>
-            <span className="letter-badge">{letter}</span>
-          </div>
-          <div className="reference-art">
-            <HandDiagram letter={letter} />
-            <span className="reference-caption">
-              PALM FACING FORWARD · SIMPLIFIED GUIDE
+        </div>
+        <aside className="training-panel" aria-label="Sign trainer">
+          <div className="training-heading">
+            <span className="eyebrow">
+              {setupIndex !== null
+                ? `DEMO SETUP · ${setupIndex + 1} / ${demoLetters.length}`
+                : "YOUR NEXT HANDSHAPE"}
             </span>
+            <span className="target-letter">{target}</span>
           </div>
-          <h2>{lessons[letter].title}</h2>
-          <p>{lessons[letter].instruction}</p>
-          <div className="lesson-tip">
+          <div className="training-reference">
+            <HandDiagram letter={target} />
+            <span>Simplified reference · either hand</span>
+          </div>
+          <h2>{lessons[target].title}</h2>
+          <p>{lessons[target].instruction}</p>
+          <div className="trainer-tip">
             <Lightbulb size={17} />
-            <span>{lessons[letter].tip}</span>
+            <span>{lessons[target].tip}</span>
           </div>
+          <div className="personal-setup">
+            <div>
+              <strong>
+                {profiles[target]
+                  ? "Personal example saved"
+                  : personalLetters.includes(target)
+                    ? "Personal setup needed"
+                    : "Make it more personal"}
+              </strong>
+              <span>
+                {profiles[target]
+                  ? "Re-record if lighting or camera position changes."
+                  : "Record your own shape for a closer match."}
+              </span>
+            </div>
+            <button
+              className="secondary-button"
+              disabled={!active}
+              onClick={
+                recording
+                  ? () => {
+                      recordingRef.current = null;
+                      setRecording(false);
+                      setRecordProgress(0);
+                    }
+                  : record
+              }
+            >
+              {recording
+                ? "Cancel recording"
+                : profiles[target]
+                  ? "Re-record letter"
+                  : `Record ${target}`}
+            </button>
+            {setupNeeded.length > 0 && (
+              <small>
+                For C, M, N, O, S, T: set up all six to distinguish similar
+                shapes. {6 - setupNeeded.length}/6 ready.
+              </small>
+            )}
+          </div>
+          <button
+            className="text-button demo-setup-button"
+            onClick={startSetup}
+          >
+            <RotateCcw size={14} />
+            Set up the demo phrase
+          </button>
           <a
             className="reference-link"
             href="https://www.lifeprint.com/asl101/fingerspelling/abc.htm"
             target="_blank"
             rel="noreferrer"
           >
-            See ASL University’s reference <ExternalLink size={13} />
+            ASL University reference <ExternalLink size={13} />
           </a>
-        </section>
-        <section className="progress-card">
+        </aside>
+      </div>
+      <section className="sign-composer" aria-labelledby="sign-text-title">
+        <div className="composer-heading">
           <div>
-            <span className="eyebrow">YOUR SMALL STEPS</span>
-            <strong>
-              {completed.length} <span>/ {letters.length} letters</span>
-            </strong>
+            <span className="eyebrow">FROM YOUR HANDS TO THE PAGE</span>
+            <h2 id="sign-text-title">
+              Sign to text<span className="feature-label">Fingerspelling</span>
+            </h2>
           </div>
-          <div className="progress-letters">
-            {letters.map((l) => (
-              <span className={completed.includes(l) ? "complete" : ""} key={l}>
-                {completed.includes(l) ? <Check size={14} /> : l}
-                <span className="sr-only">
-                  {completed.includes(l)
-                    ? `${l} completed`
-                    : `${l} not completed`}
-                </span>
-              </span>
-            ))}
-          </div>
-          <p>Progress is saved on this device.</p>
-          {completed.length > 0 && (
+          <label className="capture-switch">
+            <span>{captureEnabled ? "Capture on" : "Capture paused"}</span>
             <button
-              className="text-button muted"
+              className="toggle"
+              role="switch"
+              aria-label="Capture recognized letters as text"
+              aria-checked={captureEnabled}
               onClick={() => {
-                setCompleted([]);
-                select(letter);
+                setCaptureEnabled(!captureEnabled);
+                capture.current.reset();
               }}
             >
-              Reset progress
+              <span />
             </button>
-          )}
-        </section>
-      </aside>
-    </div>
+          </label>
+        </div>
+        <label className="sr-only" htmlFor="signed-text">
+          Recognized sign text
+        </label>
+        <textarea
+          id="signed-text"
+          value={text}
+          readOnly={drill === "words"}
+          maxLength={2000}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={
+            drill === "words"
+              ? "Your guided phrase appears here as each letter matches…"
+              : "Hold a supported letter. We’ll give it a little space here…"
+          }
+        />
+        <div className="sign-text-actions">
+          <div>
+            {drill === "letters" && (
+              <>
+                <button
+                  className="text-button"
+                  onClick={() => setText((old) => (old + " ").slice(0, 2000))}
+                >
+                  <Space size={15} />
+                  Space
+                </button>
+                <button
+                  className="text-button"
+                  disabled={!text}
+                  onClick={() => setText((old) => old.slice(0, -1))}
+                >
+                  <Delete size={15} />
+                  Undo
+                </button>
+              </>
+            )}
+            <button
+              className="text-button muted"
+              disabled={!text}
+              onClick={() => {
+                setText("");
+                capture.current.reset();
+                if (drill === "words") {
+                  setWordIndex(0);
+                  setWordDone(false);
+                  setSuccess(false);
+                }
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <div>
+            <button
+              className="text-button"
+              disabled={!text}
+              onClick={() => void copy()}
+            >
+              <Copy size={15} />
+              Copy
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!text}
+              onClick={speak}
+            >
+              <Volume2 size={16} />
+              Speak text
+            </button>
+          </div>
+        </div>
+        <p className="composer-explanation">
+          {drill === "words"
+            ? "Guided drill: only the next matching letter advances the phrase."
+            : "Free capture: supported letters appear after a steady hold. Lower your hand for 300ms to repeat a letter."}{" "}
+          Uncertain shapes are left blank.
+        </p>
+        {notice && (
+          <p className="notice" role="status">
+            {notice}
+          </p>
+        )}
+      </section>
+      <footer className="studio-footer">
+        <span>
+          {completed.length}/{letters.length} letters practiced ·{" "}
+          {Object.keys(profiles).length} personal examples
+        </span>
+        <button
+          className="text-button"
+          onClick={() => {
+            setProfiles({});
+            resetTracking();
+            setNotice("Personal examples removed from this device.");
+          }}
+        >
+          Delete personal examples
+        </button>
+        <p>
+          Experimental handshape matching, not full ASL translation. Personal
+          pose examples stay in this browser. No emotion or fluency assessment.
+        </p>
+      </footer>
+    </section>
   );
 }
